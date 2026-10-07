@@ -59,6 +59,11 @@ class CloudflareAdapter implements EdgeCacheAdapter
      */
     private static $max_tag_header_bytes = 16000;
 
+    /**
+     * A tag no page carries, purged to prove the token and zone work.
+     */
+    private const VERIFY_TAG = 'ec-status-check';
+
     private ?ClientInterface $client = null;
 
     public function setClient(ClientInterface $client): static
@@ -151,13 +156,48 @@ class CloudflareAdapter implements EdgeCacheAdapter
         return $ok;
     }
 
+    public function verify(): array
+    {
+        if (!$this->isConfigured()) {
+            return [
+                'ok' => false,
+                'message' => 'EDGECACHE_CLOUDFLARE_API_TOKEN or EDGECACHE_CLOUDFLARE_ZONE_ID is not set.',
+            ];
+        }
+
+        $result = $this->post(['tags' => [self::VERIFY_TAG]]);
+
+        return [
+            'ok' => $result['ok'],
+            'message' => $result['ok']
+                ? 'Cloudflare accepted a purge for this zone with this token.'
+                : $result['message'],
+        ];
+    }
+
     /**
-     * POST one purge request, retrying on 429. Never throws: a failed purge must not break a publish.
+     * POST one purge request and log a failure. Never throws: a failed purge must not break a publish.
      */
     protected function send(array $body): bool
     {
+        $result = $this->post($body);
+        if (!$result['ok']) {
+            $this->logger()->error('Edge cache purge failed: ' . $result['message']);
+        }
+
+        return $result['ok'];
+    }
+
+    /**
+     * POST one purge request, retrying on 429.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    protected function post(array $body): array
+    {
         $attempts = max(1, (int) static::config()->get('max_attempts'));
         $uri = sprintf('zones/%s/purge_cache', $this->zone());
+        $message = '';
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             try {
@@ -169,15 +209,15 @@ class CloudflareAdapter implements EdgeCacheAdapter
                     'allow_redirects' => false,
                 ]);
             } catch (GuzzleException $e) {
-                $this->logger()->error('Edge cache purge failed: ' . $e->getMessage());
-
-                return false;
+                return ['ok' => false, 'message' => 'Cloudflare could not be reached: ' . $e->getMessage()];
             }
 
             $status = $response->getStatusCode();
             if ($status >= 200 && $status < 300) {
-                return true;
+                return ['ok' => true, 'message' => ''];
             }
+
+            $message = sprintf('Cloudflare answered %d: %s', $status, substr((string) $response->getBody(), 0, 300));
             if ($status === 429 && $attempt < $attempts) {
                 $retryAfter = $response->getHeaderLine('Retry-After');
                 $wait = $retryAfter !== '' ? (int) $retryAfter : 2 ** $attempt;
@@ -185,16 +225,10 @@ class CloudflareAdapter implements EdgeCacheAdapter
                 continue;
             }
 
-            $this->logger()->error(sprintf(
-                'Edge cache purge failed: Cloudflare answered %d: %s',
-                $status,
-                substr((string) $response->getBody(), 0, 300)
-            ));
-
-            return false;
+            break;
         }
 
-        return false;
+        return ['ok' => false, 'message' => $message];
     }
 
     protected function client(): ClientInterface

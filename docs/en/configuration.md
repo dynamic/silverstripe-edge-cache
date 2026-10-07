@@ -48,3 +48,24 @@ Unticking the Settings box clears the cached pages straight away.
 | Record using `EdgeCachePurgeable` | Pages that listed its class, or the whole site with `edge_cache_purge: everything` |
 
 Purges only run in `enabled_environments`, whether or not the Settings box is ticked.
+
+Publishing an element also purges every page that shows a virtual copy of it (`dnadesign/silverstripe-elemental-virtual`), when that module is installed.
+
+## Checking it works, and what a failure looks like
+
+```
+sake dev/tasks/edge-cache-status             # environment, adapter, credentials, Settings switch
+sake dev/tasks/edge-cache-status verify=1    # also proves the CDN credentials (purges a tag no page carries)
+```
+
+Run `verify=1` before ticking the Settings box and after changing credentials. The box itself says "NOT ACTIVE" in its description when the environment is not enabled or the credentials are missing.
+
+A purge that the CDN refuses never breaks a publish, so an editor sees "Published" either way. The failure is written to the error log at `error` level with what was not purged, so the log must go somewhere (`SS_ERROR_LOG`, or a logger handler of your own). A purge run from the task (`edge-cache-purge`) exits 1 and prints the failure.
+
+## After a deploy
+
+Publishing purges what editors changed. A deploy that changes templates, the theme or anything else that alters the HTML of pages nobody edited does not, so cached pages keep the old markup until `edge_ttl` ends. Add this to the deploy steps:
+
+```
+sake dev/tasks/edge-cache-purge everything=1
+```

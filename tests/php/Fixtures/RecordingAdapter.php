@@ -25,9 +25,11 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
      */
     public ?array $allowedVary = null;
 
+    public bool $configured = true;
+
     public function isConfigured(): bool
     {
-        return true;
+        return $this->configured;
     }
 
     public function edgeHeaders(EdgePolicy $policy): array
@@ -48,6 +50,13 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
     public function allowedVary(): ?array
     {
         return $this->allowedVary;
+    }
+
+    public function verify(): array
+    {
+        return $this->returnFalse
+            ? ['ok' => false, 'message' => 'Cloudflare answered 403: not allowed']
+            : ['ok' => true, 'message' => 'Accepted.'];
     }
 
     public function purgeTags(array $tags): bool

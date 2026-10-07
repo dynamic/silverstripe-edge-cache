@@ -36,6 +36,11 @@ class NullAdapter implements EdgeCacheAdapter
         return null;
     }
 
+    public function verify(): array
+    {
+        return ['ok' => false, 'message' => 'No CDN adapter is configured (Injector: ' . EdgeCacheAdapter::class . ').'];
+    }
+
     public function purgeTags(array $tags): bool
     {
         return $this->log('tags', $tags);

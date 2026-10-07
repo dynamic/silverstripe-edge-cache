@@ -44,6 +44,14 @@ interface EdgeCacheAdapter
     public function allowedVary(): ?array;
 
     /**
+     * Prove the credentials work, without changing anything a visitor sees. For Cloudflare this is
+     * a purge of a tag no page carries: it succeeds only for a token that may purge this zone.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function verify(): array;
+
+    /**
      * Purge every page carrying one of these tags.
      *
      * @param string[] $tags

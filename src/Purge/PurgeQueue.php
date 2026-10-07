@@ -85,11 +85,14 @@ class PurgeQueue
     /**
      * Send what is queued to the adapter and empty the queue. Safe to call more than once.
      * Does nothing outside the enabled environments.
+     *
+     * @return bool false when the CDN did not accept the purge (logged with what was lost); true when
+     *              it did, or when there was nothing to send
      */
-    public function flush(): void
+    public function flush(): bool
     {
         if ($this->isEmpty()) {
-            return;
+            return true;
         }
 
         $pending = $this->pending();
@@ -97,7 +100,7 @@ class PurgeQueue
 
         $edge = EdgeCache::singleton();
         if (!$edge->isEnvironmentEnabled()) {
-            return;
+            return true;
         }
 
         $failed = [];
@@ -119,12 +122,14 @@ class PurgeQueue
             // A failed purge must never break a publish.
             $this->logFailure($pending, ['exception' => $e::class . ': ' . $e->getMessage()]);
 
-            return;
+            return false;
         }
 
         if ($failed) {
             $this->logFailure($pending, ['failed' => $failed]);
         }
+
+        return !$failed;
     }
 
     /**
