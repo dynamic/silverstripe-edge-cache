@@ -17,6 +17,8 @@ use Dynamic\EdgeCache\Tests\Fixtures\ScheduledSubThing;
 use Dynamic\EdgeCache\Tests\Fixtures\ScheduledThing;
 use Dynamic\EdgeCache\Tests\Fixtures\ScheduledVersionedThing;
 use Dynamic\EdgeCache\Tests\Fixtures\TextScheduleThing;
+use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
@@ -303,5 +305,66 @@ class ScheduleWindowsTest extends EdgeCacheTestCase
         $edge->capEdgeTtl(600);
 
         $this->assertSame(300, $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilAMomentUsesTheTimeLeft(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('@' . (DBDatetime::now()->getTimestamp() + 3600)));
+
+        $this->assertSame(3600, $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilTheNextLocalMidnight(): void
+    {
+        $now = $this->mockNowIn('America/Chicago', '2026-10-07 22:30:00');
+        $edge = EdgeCache::singleton();
+
+        $edge->capEdgeTtlUntil($now->modify('tomorrow'));
+
+        $this->assertSame(5400, $edge->policy()->getEdgeTtl(), 'an hour and a half to local midnight');
+    }
+
+    public function testTheLocalMidnightAfterAnAutumnClockChangeIsAnHourLater(): void
+    {
+        // Clocks go back at 02:00 on 2026-11-01 in Chicago, so that day has 25 hours.
+        $now = $this->mockNowIn('America/Chicago', '2026-11-01 01:30:00');
+        EdgeCache::config()->set('edge_ttl', 200000);
+        $edge = EdgeCache::singleton();
+
+        $edge->capEdgeTtlUntil($now->modify('tomorrow'));
+
+        $this->assertSame(84600, $edge->policy()->getEdgeTtl(), '23.5 hours, not the 22.5 the wall clock shows');
+    }
+
+    public function testCappingUntilAMomentThatHasPassedUsesTheFloor(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('2000-01-01 00:00:00', new DateTimeZone('UTC')));
+
+        $this->assertSame((int) EdgeCache::config()->get('schedule_ttl_floor'), $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilAMomentKeepsTheShortestCap(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtl(300);
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('@' . (DBDatetime::now()->getTimestamp() + 3600)));
+
+        $this->assertSame(300, $edge->policy()->getEdgeTtl());
+    }
+
+    /**
+     * Sets the mocked clock to a wall-clock time in a named zone (the mock string is read in the PHP
+     * default zone) and returns that moment in that zone.
+     */
+    private function mockNowIn(string $zone, string $wallClock): DateTimeImmutable
+    {
+        $moment = new DateTimeImmutable($wallClock, new DateTimeZone($zone));
+        DBDatetime::set_mock_now(
+            $moment->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s')
+        );
+
+        return $moment;
     }
 }
