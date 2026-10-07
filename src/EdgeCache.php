@@ -168,6 +168,14 @@ class EdgeCache
     private array $tagClasses = [];
 
     /**
+     * Classes the page queried whose tag was already on it (declared, or the same short name from
+     * another namespace), so no entry in $tagClasses. Their scheduled fields still count.
+     *
+     * @var array<string, true>
+     */
+    private array $seenClasses = [];
+
+    /**
      * Classes a page declared a dependency on (`edge_cache_depends_on`).
      *
      * @var array<string, true>
@@ -334,6 +342,8 @@ class EdgeCache
 
         $tag = self::classTag($class);
         if (isset($this->tags[$tag])) {
+            $this->seenClasses[ltrim($class, '\\')] = true;
+
             return null;
         }
         $this->addTags($tag);
@@ -351,8 +361,11 @@ class EdgeCache
     }
 
     /**
-     * Note a class the page depends on without querying it (`edge_cache_depends_on`), so its
-     * scheduled records are taken into account. The tag itself is added separately.
+     * Note a class the page depends on without querying it (`edge_cache_depends_on`, a block behind
+     * a partial cache, an element or page class with its own scheduled fields), so its scheduled
+     * records are taken into account. The tag itself is added separately. Needed for a class the
+     * module never collects (pages, elements, files, members), and for any hook that adds a class
+     * tag with `updateEdgeCacheTags`.
      */
     public function declareClass(string $class): void
     {
@@ -376,7 +389,11 @@ class EdgeCache
      */
     public function collectedClasses(): array
     {
-        $classes = array_merge(array_values($this->tagClasses), array_keys($this->declaredClasses));
+        $classes = array_merge(
+            array_values($this->tagClasses),
+            array_keys($this->seenClasses),
+            array_keys($this->declaredClasses)
+        );
         foreach ($this->lazyClasses as $class => $ids) {
             if ($ids !== [$this->currentPageId => true]) {
                 $classes[] = $class;
@@ -455,6 +472,7 @@ class EdgeCache
         $this->cacheable = false;
         $this->tags = [];
         $this->tagClasses = [];
+        $this->seenClasses = [];
         $this->declaredClasses = [];
         $this->ttlCap = null;
         $this->lazyClasses = [];
