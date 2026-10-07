@@ -3,6 +3,7 @@
 namespace Dynamic\EdgeCache;
 
 use Dynamic\EdgeCache\Adapter\EdgeCacheAdapter;
+use DateTimeInterface;
 use Dynamic\EdgeCache\Policy\EdgePolicy;
 use SilverStripe\Control\Director;
 use SilverStripe\Core\ClassInfo;
@@ -11,6 +12,7 @@ use SilverStripe\Core\Environment;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\ORM\DataObject;
+use SilverStripe\ORM\FieldType\DBDatetime;
 use SilverStripe\SiteConfig\SiteConfig;
 use SilverStripe\Versioned\Versioned;
 use Throwable;
@@ -381,6 +383,17 @@ class EdgeCache
     public function capEdgeTtl(int $seconds): void
     {
         $this->ttlCap = $this->ttlCap === null ? $seconds : min($this->ttlCap, $seconds);
+    }
+
+    /**
+     * Cap the edge lifetime at a moment, for content that changes at a time no record stores (a
+     * "today" view that rolls over at local midnight): `capEdgeTtlUntil(new DateTimeImmutable('tomorrow',
+     * new DateTimeZone('America/Chicago')))`. A moment already past counts as now, so the page gets
+     * the `schedule_ttl_floor` lifetime.
+     */
+    public function capEdgeTtlUntil(DateTimeInterface $when): void
+    {
+        $this->capEdgeTtl(max(0, $when->getTimestamp() - DBDatetime::now()->getTimestamp()));
     }
 
     /**

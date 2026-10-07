@@ -17,6 +17,8 @@ use Dynamic\EdgeCache\Tests\Fixtures\ScheduledSubThing;
 use Dynamic\EdgeCache\Tests\Fixtures\ScheduledThing;
 use Dynamic\EdgeCache\Tests\Fixtures\ScheduledVersionedThing;
 use Dynamic\EdgeCache\Tests\Fixtures\TextScheduleThing;
+use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
@@ -301,6 +303,45 @@ class ScheduleWindowsTest extends EdgeCacheTestCase
         $edge->capEdgeTtl(900);
         $edge->capEdgeTtl(300);
         $edge->capEdgeTtl(600);
+
+        $this->assertSame(300, $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilAMomentUsesTheTimeLeft(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('@' . (DBDatetime::now()->getTimestamp() + 3600)));
+
+        $this->assertSame(3600, $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilTheNextLocalMidnight(): void
+    {
+        DBDatetime::set_mock_now('2026-10-07 22:30:00');
+        $timezone = new DateTimeZone(date_default_timezone_get());
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('tomorrow', $timezone));
+
+        $this->assertSame(
+            (new DateTimeImmutable('tomorrow', $timezone))->getTimestamp() - DBDatetime::now()->getTimestamp(),
+            $edge->policy()->getEdgeTtl()
+        );
+        $this->assertLessThanOrEqual(86400, $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilAMomentThatHasPassedUsesTheFloor(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('2000-01-01 00:00:00', new DateTimeZone('UTC')));
+
+        $this->assertSame((int) EdgeCache::config()->get('schedule_ttl_floor'), $edge->policy()->getEdgeTtl());
+    }
+
+    public function testCappingUntilAMomentKeepsTheShortestCap(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->capEdgeTtl(300);
+        $edge->capEdgeTtlUntil(new DateTimeImmutable('@' . (DBDatetime::now()->getTimestamp() + 3600)));
 
         $this->assertSame(300, $edge->policy()->getEdgeTtl());
     }
