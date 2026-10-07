@@ -12,7 +12,7 @@ All keys are Silverstripe config on `Dynamic\EdgeCache\EdgeCache` unless noted.
 | `browser_max_age` | `60` | Seconds a browser keeps a page. Short, because browsers cannot be purged |
 | `max_tags` | `150` | Most cache tags on one page. A page over the limit is served from the origin as `private` and a warning is logged once an hour per URL |
 | `auto_tag_ignore` | `SiteTree`, `Page`, `DataObject` | Classes whose queries never become tags (exact match) |
-| `auto_tag_ignore_descendants` | elements, element areas, `SiteConfig`, `File`, `Member`, `Group` | Classes, and every subclass, whose queries never become tags |
+| `auto_tag_ignore_descendants` | elements, element areas, `SiteConfig`, `File`, `Group` | Classes, and every subclass, whose queries never become tags |
 | `excluded_paths` | `admin`, `dev`, `Security` | URL prefixes that never get edge headers |
 
 `Dynamic\EdgeCache\Adapter\CloudflareAdapter`: `max_items_per_request` (100; 500 on Enterprise), `max_attempts` (3), `max_retry_wait` (15 seconds), `max_tag_header_bytes` (16000).
@@ -64,12 +64,13 @@ One extra query per configured field runs when the origin renders a cacheable pa
 
 | Event | Purge |
 |---|---|
-| Page published | The page, its ancestors, and pages that listed records of its class (class tags) |
+| Page published | The page, its ancestors, pages that listed records of its class (class tags), and pages that listed its parent's children (`edge_cache_tag_children`) |
 | Page published with a changed Title, MenuTitle, URLSegment, ShowInMenus, Sort or ParentID | The whole site (navigation shows on every page) |
 | Page unpublished or archived | The whole site |
 | Element published, unpublished or archived | The page it sits on |
 | Settings saved | The whole site |
 | File published, replaced or archived | The file's URL |
+| Member's `FirstName` or `Surname` changed, member deleted | Pages that listed members (their authors) |
 | Record using `EdgeCachePurgeable` | Pages that listed its class, or the whole site with `edge_cache_purge: everything` |
 
 Purges only run in `enabled_environments`, whether or not the Settings box is ticked.

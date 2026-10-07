@@ -4,17 +4,28 @@
 
 A page is tagged with every class it queries while it renders. A home page that shows recent posts, a team page, a testimonials block: each query adds a class tag (`ec-class-BlogPost`), so publishing a post purges every page that listed posts. Nothing needs declaring for those.
 
-Some classes are never tagged because every page queries them: `Page` and `SiteTree` (navigation and the page load), and elements, element areas, `SiteConfig`, files and members including all their subclasses. Change the lists with `EdgeCache.auto_tag_ignore` (exact class names, so a subclass such as `BlogPost` is still tagged) and `EdgeCache.auto_tag_ignore_descendants` (the class and every subclass).
+Some classes are never tagged because every page queries them: `Page` and `SiteTree` (navigation and the page load), and elements, element areas, `SiteConfig`, files and groups including all their subclasses. Members are tagged: a page that lists authors carries `ec-class-Member`, and a change to a member's `FirstName` or `Surname` (`Member.edge_cache_purge_fields`) or deleting one purges those pages. A login's writes (last visited, password hash) never purge. Change the lists with `EdgeCache.auto_tag_ignore` (exact class names, so a subclass such as `BlogPost` is still tagged) and `EdgeCache.auto_tag_ignore_descendants` (the class and every subclass).
 
 When the page itself is the record Silverstripe lazy-loads subclass fields for (`$Summary` on a blog post), that is not a tag: it would tie every blog post to every other. The same read on some other record, such as a listed post, is.
 
 Publishing a page purges its own tag, its ancestors' tags and the class tags of its class chain. Plain pages never purge each other.
 
+### Pages that list a page's children
+
+`$Children` and `$AllChildren` query `SiteTree`, which is ignored, so a page that shows "latest news" from a news holder is not tagged for those pages. Opt the holder's class in and every page that reads its children carries `ec-children-<holder id>`; publishing any child purges that tag:
+
+```yaml
+App\Pages\NewsHolder:
+  edge_cache_tag_children: true
+```
+
+It is off by default on purpose. A menu reads the children of every top-level page, so tagging all of them would make an edit to any child purge every page that shows the menu. Turn it on for the classes whose children are listed outside their own section. The holder's own page is purged by its page tag regardless, and a change to a child's title, URL or menu position clears the whole site.
+
 ### What is not tracked
 
 The module sees database queries made while the page renders. These cases need a declaration, or accept up to `edge_ttl` (6 hours by default) of staleness:
 
-- **Listings through an ignored class.** `$Children`, `SiteTree::get()->filter(...)`, `Page::get()`, `File::get()` and `Member::get()` query a class the module ignores, so a home page showing "latest news" through `$NewsHolder.Children` is not tagged for those pages. Publishing a child purges the holder's own tag, so depend on the holder:
+- **Listings through an ignored class.** `SiteTree::get()->filter(...)`, `Page::get()`, `File::get()` query a class the module ignores, so a page showing a listing made that way is not tagged for those pages. A page listing a holder's children with `$Children` or `$AllChildren` can be tagged for them, see below. For anything else, depend on the holder (publishing a child purges the holder's own tag):
 
   ```php
   // in the page's controller init(), or an extension

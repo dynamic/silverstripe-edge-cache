@@ -36,6 +36,8 @@ class EdgeCache
 
     public const CLASS_TAG_PREFIX = 'ec-class-';
 
+    public const CHILDREN_TAG_PREFIX = 'ec-children-';
+
     /**
      * `SS_ENVIRONMENT_TYPE` values in which edge caching and purging run.
      *
@@ -110,7 +112,8 @@ class EdgeCache
     /**
      * Classes whose queries never become tags, and every subclass of them. These are never what a
      * page lists: elements and their area (publishing one purges the owner page directly), Settings
-     * (a save purges the site), files and security records.
+     * (a save purges the site), files, and groups. Members are not here: a page that lists authors
+     * is tagged, and a change to a member's name purges it (EdgeCacheMemberExtension).
      *
      * @config
      * @var string[]
@@ -120,7 +123,6 @@ class EdgeCache
         'DNADesign\\Elemental\\Models\\ElementalArea',
         'SilverStripe\\SiteConfig\\SiteConfig',
         'SilverStripe\\Assets\\File',
-        'SilverStripe\\Security\\Member',
         'SilverStripe\\Security\\Group',
     ];
 
@@ -455,6 +457,15 @@ class EdgeCache
     public static function pageTag(int|string $id): string
     {
         return self::PAGE_TAG_PREFIX . $id;
+    }
+
+    /**
+     * Tag for pages that list the children of one page (`$Children`), see
+     * EdgeCacheSiteTreeExtension.
+     */
+    public static function childrenTag(int|string $id): string
+    {
+        return self::CHILDREN_TAG_PREFIX . $id;
     }
 
     public static function classTag(string $class): string
