@@ -139,4 +139,40 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
 
         $this->assertStringContainsString('no rules in the zone for other.example.com', $out);
     }
+
+    public function testNoValidateSkipsTheDryRunWhenApplying(): void
+    {
+        $out = $this->runTask(['host' => 'example.com', 'apply' => true, 'no-validate' => true], $this->ok(), $this->ok());
+
+        $this->assertStringContainsString('Wrote the ruleset for', $out);
+        $this->assertCount(2, $this->history, 'one read and one write, no dry run');
+        foreach ($this->history as $transaction) {
+            $this->assertStringNotContainsString('dry_run', $transaction['request']->getUri()->getQuery());
+        }
+    }
+
+    public function testNoValidateWithoutApplyWritesNothing(): void
+    {
+        $out = $this->runTask(['host' => 'example.com', 'no-validate' => true], $this->ok());
+
+        $this->assertStringContainsString('Dry run for host example.com', $out);
+        $this->assertCount(1, $this->history);
+    }
+
+    public function testAnErrorMessageWithMarkupIsShownLiterally(): void
+    {
+        $out = $this->runTask(
+            ['host' => 'example.com', 'validate' => true],
+            $this->ok(),
+            new Response(400, [], json_encode(['success' => false, 'errors' => [['message' => 'unexpected <info>x</info>']]]))
+        );
+
+        $this->assertStringContainsString('unexpected <info>x', $out);
+        $this->assertSame(1, $this->exitCode);
+    }
+
+    public function testItIsRegisteredUnderTheNameTheDocsUse(): void
+    {
+        $this->assertSame('tasks:edge-cache-cloudflare-rules', EdgeCacheCloudflareRulesTask::getName());
+    }
 }

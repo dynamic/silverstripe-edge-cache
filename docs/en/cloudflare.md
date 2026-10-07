@@ -32,7 +32,7 @@ sake tasks:edge-cache-cloudflare-rules --remove                                 
 
 `--validate` and `--apply` refuse to run without `--host`. A local or staging site's base URL is not the host the zone serves, and rules written for it would match no real traffic. Each host keeps its own rules (the host is part of each rule's ref), so apex and www can both be provisioned in one zone; `--remove` takes back every host's rules, or only one host's with `--host`.
 
-A failure prints to stderr and exits 1, so a script running the task can tell. The task reads the zone's rules and then replaces the whole ruleset in one write, so run it from one place at a time: a rule saved in the dashboard between the read and the write would be overwritten. If a write ends in a timeout the task says so, because it may have been applied; run it with no arguments to see the rules the zone holds.
+A failure prints the error and exits 1 under `sake`, so a script running the task can tell. Run the tasks with `sake`: over HTTP (`/dev/tasks/...`) the framework answers 200 even when a task failed, so the response status is not a failure signal. The task reads the zone's rules and then replaces the whole ruleset in one write, so run it from one place at a time: a rule saved in the dashboard between the read and the write would be overwritten. If a write ends in a timeout the task says so, because it may have been applied; run it with no arguments to see the rules the zone holds.
 
 The task reads the zone's existing cache rules, keeps them, and adds up to five of its own after them (a rule that comes later wins when settings conflict). Rules 1, 3, 4 and 5 apply to page paths only: not `/admin`, `/Security`, `/dev`, `/_resources` or `/assets`.
 

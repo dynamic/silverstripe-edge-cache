@@ -62,4 +62,9 @@ class EdgeCacheStatusTaskTest extends EdgeCacheTestCase
 
         $this->assertStringContainsString('not ticked', $this->runTask());
     }
+
+    public function testItIsRegisteredUnderTheNameTheDocsUse(): void
+    {
+        $this->assertSame('tasks:edge-cache-status', EdgeCacheStatusTask::getName());
+    }
 }

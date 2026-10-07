@@ -5,6 +5,8 @@ namespace Dynamic\EdgeCache\Tests\Task;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use Dynamic\EdgeCache\Task\EdgeCachePurgeTask;
 use Dynamic\EdgeCache\Tests\Fixtures\RunsTasks;
+use SilverStripe\Control\HTTPRequest;
+use SilverStripe\PolyExecution\HttpRequestInput;
 use SilverStripe\Core\Environment;
 
 class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
@@ -80,6 +82,46 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $this->assertStringContainsString('Nothing to purge', $out);
         $this->assertStringContainsString('--purge-url=', $out);
         $this->assertSame(1, $this->exitCode);
+        $this->assertSame([], $this->adapter->calls);
+    }
+
+    public function testTagsAndUrlsAreTrimmedAndDeduplicated(): void
+    {
+        $this->runTask(['tag' => 'a, b,,a,', 'purge-url' => 'https://example.com/a.pdf,https://example.com/a.pdf']);
+
+        $this->assertSame(
+            [['tags', ['a', 'b']], ['urls', ['https://example.com/a.pdf']]],
+            $this->adapter->calls
+        );
+    }
+
+    public function testItIsRegisteredUnderTheNameTheDocsUse(): void
+    {
+        $this->assertSame('tasks:edge-cache-purge', EdgeCachePurgeTask::getName());
+    }
+
+    public function testOverHttpTheQueryVariablesMapToTheOptions(): void
+    {
+        $task = new EdgeCachePurgeTask();
+        $request = new HTTPRequest('GET', '', ['tag' => 'a,b', 'purge-url' => 'https://example.com/a.pdf']);
+
+        $this->executeTask($task, HttpRequestInput::create($request, $task->getOptions()));
+
+        $this->assertSame(0, $this->exitCode);
+        $this->assertSame([['tags', ['a', 'b']], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
+    }
+
+    public function testOverHttpAFlagIsReadFromTheQueryString(): void
+    {
+        $task = new EdgeCachePurgeTask();
+        $options = $task->getOptions();
+
+        $this->executeTask($task, HttpRequestInput::create(new HTTPRequest('GET', '', ['everything' => '1']), $options));
+        $this->assertSame([['everything', []]], $this->adapter->calls);
+
+        $this->adapter->calls = [];
+        $this->executeTask($task, HttpRequestInput::create(new HTTPRequest('GET', '', ['everything' => '0']), $options));
+        $this->assertSame(1, $this->exitCode, 'everything=0 is off, so there is nothing to purge');
         $this->assertSame([], $this->adapter->calls);
     }
 }
