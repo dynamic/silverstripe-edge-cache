@@ -5,10 +5,12 @@ namespace Dynamic\EdgeCache;
 use Dynamic\EdgeCache\Adapter\EdgeCacheAdapter;
 use Dynamic\EdgeCache\Policy\EdgePolicy;
 use SilverStripe\Control\Director;
+use SilverStripe\Core\ClassInfo;
 use SilverStripe\Core\Config\Configurable;
 use SilverStripe\Core\Environment;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\ORM\DataObject;
 use SilverStripe\SiteConfig\SiteConfig;
 use SilverStripe\Versioned\Versioned;
 use Throwable;
@@ -71,12 +73,35 @@ class EdgeCache
     private static $browser_max_age = 60;
 
     /**
-     * Most tags one page carries; the rest are dropped.
+     * Most tags one page may carry. A page that would carry more is not edge-cached: a truncated
+     * tag set would leave it out of purges it needs.
      *
      * @config
      * @var int
      */
-    private static $max_tags = 100;
+    private static $max_tags = 150;
+
+    /**
+     * Classes whose queries never become tags. Navigation and the page load query these on every
+     * page, so a tag for them would tie every page to every publish. Matched exactly, so a
+     * subclass that lists its own records (BlogPost) is still tagged.
+     *
+     * @config
+     * @var string[]
+     */
+    private static $auto_tag_ignore = [
+        'SilverStripe\\CMS\\Model\\SiteTree',
+        'Page',
+        'DNADesign\\Elemental\\Models\\BaseElement',
+        'DNADesign\\Elemental\\Models\\ElementalArea',
+        'SilverStripe\\SiteConfig\\SiteConfig',
+        'SilverStripe\\Assets\\File',
+        'SilverStripe\\Assets\\Image',
+        'SilverStripe\\Assets\\Folder',
+        'SilverStripe\\Security\\Member',
+        'SilverStripe\\Security\\Group',
+        'SilverStripe\\ORM\\DataObject',
+    ];
 
     /**
      * URL path prefixes (no leading slash) that never get edge headers.
@@ -177,14 +202,71 @@ class EdgeCache
     }
 
     /**
-     * @return string[] the site tag first, then the rest, capped at `max_tags`
+     * @return string[] the site tag first, then the rest in the order they were added
      */
     public function getTags(): array
     {
-        $tags = array_keys($this->tags);
-        $tags = array_slice(array_diff($tags, [self::SITE_TAG]), 0, max(0, (int) static::config()->get('max_tags') - 1));
+        return array_merge([self::SITE_TAG], array_keys(array_diff_key($this->tags, [self::SITE_TAG => true])));
+    }
 
-        return array_merge([self::SITE_TAG], $tags);
+    /**
+     * True when the page carries more tags than `max_tags` allows.
+     */
+    public function isTagOverflow(): bool
+    {
+        return count($this->getTags()) > (int) static::config()->get('max_tags');
+    }
+
+    /**
+     * Whether queries are being recorded as tags. A static flag, so the query hook costs nothing
+     * on requests that are not edge-cached.
+     */
+    public static function isCollecting(): bool
+    {
+        return CollectionState::isActive();
+    }
+
+    public function startCollecting(): void
+    {
+        CollectionState::set(true);
+    }
+
+    public function stopCollecting(): void
+    {
+        CollectionState::set(false);
+    }
+
+    /**
+     * Record that the current page queried a class, unless the class is in `auto_tag_ignore`.
+     */
+    public function collectClass(string $class): void
+    {
+        $ignored = array_map(
+            fn ($name) => strtolower(ltrim($name, '\\')),
+            (array) static::config()->get('auto_tag_ignore')
+        );
+        if (!in_array(strtolower(ltrim($class, '\\')), $ignored, true)) {
+            $this->addTags(self::classTag($class));
+        }
+    }
+
+    /**
+     * Class tags for a record being purged: its class and every parent class below DataObject.
+     * Parents the site ignores when tagging are included, because a page can declare one
+     * (a sitemap listing every page declares SiteTree).
+     *
+     * @return string[]
+     */
+    public static function classChainTags(string $class): array
+    {
+        $tags = [];
+        foreach (ClassInfo::ancestry($class) as $ancestor) {
+            if ($ancestor !== DataObject::class && is_subclass_of($ancestor, DataObject::class)) {
+                $tags[] = self::classTag($ancestor);
+            }
+        }
+
+        return $tags;
     }
 
     public static function pageTag(int|string $id): string
@@ -206,6 +288,7 @@ class EdgeCache
     {
         $this->cacheable = false;
         $this->tags = [];
+        CollectionState::set(false);
     }
 
     /**

@@ -43,6 +43,7 @@ class EdgeCacheSiteTreeExtensionTest extends EdgeCacheTestCase
         $this->assertContains('ec-page-' . $child->ID, $pending['tags']);
         $this->assertContains('ec-page-' . $holder->ID, $pending['tags']);
         $this->assertContains('ec-class-Page', $pending['tags']);
+        $this->assertContains('ec-class-SiteTree', $pending['tags']);
     }
 
     public function testChangingTheTitleClearsTheWholeSite(): void

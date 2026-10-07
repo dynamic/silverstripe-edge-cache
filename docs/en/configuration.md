@@ -9,7 +9,8 @@ All keys are Silverstripe config on `Dynamic\EdgeCache\EdgeCache` unless noted.
 | `stale_while_revalidate` | `60` | Seconds the edge may serve a stale copy while it refetches |
 | `stale_if_error` | `86400` | Seconds the edge may serve a stale copy when the origin errors |
 | `browser_max_age` | `60` | Seconds a browser keeps a page. Short, because browsers cannot be purged |
-| `max_tags` | `100` | Most cache tags on one page |
+| `max_tags` | `150` | Most cache tags on one page. A page over the limit is not edge-cached |
+| `auto_tag_ignore` | `SiteTree`, `Page`, elements, `SiteConfig`, files, members | Classes whose queries never become tags |
 | `excluded_paths` | `admin`, `dev`, `Security` | URL prefixes that never get edge headers |
 
 `Dynamic\EdgeCache\Adapter\CloudflareAdapter`: `max_items_per_request` (100; 500 on Enterprise), `max_attempts` (3), `max_retry_wait` (15 seconds), `max_tag_header_bytes` (16000).
@@ -34,12 +35,12 @@ Unticking the Settings box clears the cached pages straight away.
 
 | Event | Purge |
 |---|---|
-| Page published | The page, its ancestors, and pages tagged with its class |
+| Page published | The page, its ancestors, and pages that listed records of its class (class tags) |
 | Page published with a changed Title, MenuTitle, URLSegment, ShowInMenus, Sort or ParentID | The whole site (navigation shows on every page) |
 | Page unpublished or archived | The whole site |
 | Element published, unpublished or archived | The page it sits on |
 | Settings saved | The whole site |
 | File published, replaced or archived | The file's URL |
-| Record using `EdgeCachePurgeable` | What its `edge_cache_purge` config says |
+| Record using `EdgeCachePurgeable` | Pages that listed its class, or the whole site with `edge_cache_purge: everything` |
 
 Purges only run in `enabled_environments`, whether or not the Settings box is ticked.

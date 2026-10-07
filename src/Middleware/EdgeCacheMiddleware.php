@@ -3,10 +3,12 @@
 namespace Dynamic\EdgeCache\Middleware;
 
 use Dynamic\EdgeCache\EdgeCache;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Control\Middleware\HTTPMiddleware;
 use SilverStripe\Core\Injector\Injectable;
+use SilverStripe\Core\Injector\Injector;
 
 /**
  * Adds the CDN's edge headers to a page response, once Silverstripe has settled the browser
@@ -27,7 +29,15 @@ class EdgeCacheMiddleware implements HTTPMiddleware
         $edge = EdgeCache::singleton();
         $edge->reset();
 
-        $response = $delegate($request);
+        if (in_array($request->httpMethod(), ['GET', 'HEAD'], true) && $edge->isEnvironmentEnabled()) {
+            $edge->startCollecting();
+        }
+
+        try {
+            $response = $delegate($request);
+        } finally {
+            $edge->stopCollecting();
+        }
 
         if ($response instanceof HTTPResponse) {
             if ($this->shouldStamp($edge, $request, $response)) {
@@ -49,6 +59,16 @@ class EdgeCacheMiddleware implements HTTPMiddleware
             return false;
         }
         if ($edge->isExcludedPath($request->getURL())) {
+            return false;
+        }
+        if ($edge->isTagOverflow()) {
+            Injector::inst()->get(LoggerInterface::class)->warning(sprintf(
+                'Edge cache skipped %s: %d tags is over the limit of %d. Raise EdgeCache.max_tags or ignore a class.',
+                $request->getURL(),
+                count($edge->getTags()),
+                (int) EdgeCache::config()->get('max_tags')
+            ));
+
             return false;
         }
         if ($this->hasCookies($response)) {

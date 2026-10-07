@@ -11,16 +11,16 @@ use SilverStripe\Versioned\Versioned;
  * Purges the edge when a record that pages display (a testimonial, a team member, a logo) is
  * written, published or deleted.
  *
- * Apply it to the class and say what to purge:
+ * Apply it to the class:
  *
  *     Vendor\\Model\\Testimonial:
  *       extensions:
  *         - Dynamic\\EdgeCache\\Extension\\EdgeCachePurgeable
- *       edge_cache_purge: everything     # or a list of classes whose pages show it
- *       edge_cache_purge: ['Page', 'Vendor\\Model\\TestimonialsPage']
  *
- * `everything` clears the whole site. A list of class names clears pages of those classes through
- * their class tag. A record that is Versioned purges on publish; one that is not purges on write.
+ * By default it clears the pages that listed records of that class (they carry its class tag).
+ * `edge_cache_purge: everything` clears the whole site, for a record shown on every page (footer
+ * links). A list of class names adds those class tags too. A record that is Versioned purges on
+ * publish; one that is not purges on write.
  *
  * @property \SilverStripe\ORM\DataObject|static $owner
  */
@@ -67,12 +67,17 @@ class EdgeCachePurgeable extends DataExtension
         $setting = $this->owner->config()->get('edge_cache_purge');
         $queue = PurgeQueue::singleton();
 
-        if (!$setting || $setting === 'everything') {
+        if ($setting === 'everything') {
             $queue->addEverything();
 
             return;
         }
 
-        $queue->addTags(array_map(fn ($class) => EdgeCache::classTag($class), (array) $setting));
+        // Pages that listed records of this class carry its class tag, so purge that.
+        $tags = EdgeCache::classChainTags($this->owner->ClassName);
+        foreach ((array) $setting as $class) {
+            $tags[] = EdgeCache::classTag($class);
+        }
+        $queue->addTags($tags);
     }
 }

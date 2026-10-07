@@ -62,13 +62,22 @@ class EdgeCacheControllerExtensionTest extends EdgeCacheTestCase
         $this->assertStringNotContainsString('s-maxage', $response->getHeader('Cache-Control'));
     }
 
-    public function testPageIsTaggedWithItsIdAndClass(): void
+    public function testPageIsTaggedWithItsId(): void
     {
         $controller = $this->init();
         $tags = EdgeCache::singleton()->getTags();
 
         $this->assertContains('ec-page-' . $controller->data()->ID, $tags);
-        $this->assertContains('ec-class-Page', $tags);
+        $this->assertNotContains('ec-class-Page', $tags, 'a plain page must not tie itself to every page');
+    }
+
+    public function testAPageCanDeclareADependencyOnAnIgnoredClass(): void
+    {
+        // A sitemap lists every page but queries SiteTree, which is ignored when tagging.
+        Page::config()->set('edge_cache_depends_on', [\SilverStripe\CMS\Model\SiteTree::class]);
+        $this->init();
+
+        $this->assertContains('ec-class-SiteTree', EdgeCache::singleton()->getTags());
     }
 
     public function testNothingHappensOutsideLive(): void

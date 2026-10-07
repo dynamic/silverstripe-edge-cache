@@ -135,22 +135,6 @@ class EdgeCacheMiddlewareTest extends EdgeCacheTestCase
         $this->assertNull($response->getHeader('Cache-Tag'));
     }
 
-    public function testTagsAreCapped(): void
-    {
-        EdgeCache::config()->set('max_tags', 3);
-        $request = new HTTPRequest('GET', 'about');
-        $response = (new EdgeCacheMiddleware())->process($request, function () {
-            EdgeCache::singleton()->markCacheable();
-            EdgeCache::singleton()->addTags(['a', 'b', 'c', 'd']);
-            $response = new HTTPResponse('body');
-            $response->addHeader('Cache-Control', 'public, max-age=60');
-
-            return $response;
-        });
-
-        $this->assertSame('ec-site,a,b', $response->getHeader('Cache-Tag'));
-    }
-
     public function testTagsAreSanitised(): void
     {
         $edge = EdgeCache::singleton();

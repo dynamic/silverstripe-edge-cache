@@ -14,10 +14,11 @@ use SilverStripe\Core\Extension;
  * session to `private` and a page with a CSRF form to `no-store`. The browser lifetime is set on
  * the public state only: `setMaxAge()` would also write it into the private and disabled states.
  *
- * Pages that show content from other records (a home page listing recent posts) declare the
- * classes they depend on, so publishing one of those purges the page:
+ * Records a page lists (recent posts, staff, testimonials) are tagged automatically by
+ * EdgeCacheQueryExtension. A page that depends on something it does not query (a sitemap that
+ * lists every page) declares the class:
  *
- *     private static $edge_cache_depends_on = [BlogPost::class];
+ *     private static $edge_cache_depends_on = [SiteTree::class];
  *
  * @property ContentController|static $owner
  */
@@ -62,7 +63,6 @@ class EdgeCacheControllerExtension extends Extension
         $record = $this->owner->data();
         if ($record && $record->exists()) {
             $tags[] = EdgeCache::pageTag($record->ID);
-            $tags[] = EdgeCache::classTag($record->ClassName);
 
             foreach ((array) $record->config()->get('edge_cache_depends_on') as $class) {
                 $tags[] = EdgeCache::classTag($class);
