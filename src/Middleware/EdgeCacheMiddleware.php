@@ -105,7 +105,41 @@ class EdgeCacheMiddleware implements HTTPMiddleware
         }
 
         // `no-store` or `private` alongside `public` is a contradiction; trust the stricter one.
-        return !preg_match('/(^|[\s,])(no-store|private)([\s,=]|$)/', $control);
+        if (preg_match('/(^|[\s,])(no-store|private)([\s,=]|$)/', $control)) {
+            return false;
+        }
+
+        return $this->varyAllowsCaching($edge, $response);
+    }
+
+    /**
+     * For an edge that only tolerates some `Vary` values, the page can go to the edge only if every
+     * other value is one that can safely be dropped (EdgeCache.vary_ignorable). Anything else, such
+     * as Cookie or `*`, means the response differs in a way the edge could not tell apart.
+     */
+    protected function varyAllowsCaching(EdgeCache $edge, HTTPResponse $response): bool
+    {
+        $allowed = $edge->adapter()->allowedVary();
+        if ($allowed === null) {
+            return true;
+        }
+
+        $tolerated = array_map('strtolower', array_merge($allowed, (array) EdgeCache::config()->get('vary_ignorable')));
+        foreach ($this->varyValues($response) as $value) {
+            if (!in_array(strtolower($value), $tolerated, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return string[]
+     */
+    protected function varyValues(HTTPResponse $response): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) $response->getHeader('Vary')))));
     }
 
     protected function stamp(EdgeCache $edge, HTTPResponse $response): void
@@ -119,6 +153,36 @@ class EdgeCacheMiddleware implements HTTPMiddleware
         $tagHeader = $adapter->tagHeaderName();
         if ($tagHeader) {
             $response->addHeader($tagHeader, $adapter->formatTags($edge->getTags()));
+        }
+
+        if (($allowed = $adapter->allowedVary()) !== null) {
+            $this->restrictVary($response, $allowed);
+        }
+    }
+
+    /**
+     * Keep only the `Vary` values the edge tolerates. An edge that will not cache a response whose
+     * `Vary` names anything beyond `Accept-Encoding` (Imperva) needs the rest removed. By now every
+     * other value is known to be one that can be dropped (varyAllowsCaching()).
+     *
+     * @param string[] $allowed
+     */
+    protected function restrictVary(HTTPResponse $response, array $allowed): void
+    {
+        if ($this->varyValues($response) === []) {
+            return;
+        }
+
+        $allowed = array_map('strtolower', $allowed);
+        $kept = array_filter(
+            $this->varyValues($response),
+            fn ($value) => in_array(strtolower($value), $allowed, true)
+        );
+
+        if ($kept) {
+            $response->addHeader('Vary', implode(', ', $kept));
+        } else {
+            $response->removeHeader('Vary');
         }
     }
 

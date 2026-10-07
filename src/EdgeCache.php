@@ -115,6 +115,18 @@ class EdgeCache
     ];
 
     /**
+     * `Vary` values that may be removed for an edge that refuses to cache a response varying on
+     * anything but Accept-Encoding (see EdgeCacheAdapter::allowedVary()). Each one names a variant
+     * that is never cached here: Markdown is `no-store`, Ajax responses are never public, and the
+     * scheme is not served two ways. Any other value (Cookie, Accept-Language, `*`) keeps the page
+     * out of the edge, since stripping it would let one variant be served as another.
+     *
+     * @config
+     * @var string[]
+     */
+    private static $vary_ignorable = ['X-Forwarded-Protocol', 'X-Forwarded-Proto', 'Accept', 'X-Requested-With'];
+
+    /**
      * URL path prefixes (no leading slash) that never get edge headers.
      *
      * @config

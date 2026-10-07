@@ -166,6 +166,7 @@ class CloudflareAdapter implements EdgeCacheAdapter
                     'json' => $body,
                     'http_errors' => false,
                     'timeout' => 10,
+                    'allow_redirects' => false,
                 ]);
             } catch (GuzzleException $e) {
                 $this->logger()->error('Edge cache purge failed: ' . $e->getMessage());

@@ -20,6 +20,11 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
 
     public bool $returnFalse = false;
 
+    /**
+     * @var string[]|null
+     */
+    public ?array $allowedVary = null;
+
     public function isConfigured(): bool
     {
         return true;
@@ -42,7 +47,7 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
 
     public function allowedVary(): ?array
     {
-        return null;
+        return $this->allowedVary;
     }
 
     public function purgeTags(array $tags): bool

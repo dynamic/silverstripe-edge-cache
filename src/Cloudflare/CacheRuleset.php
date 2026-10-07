@@ -28,13 +28,27 @@ class CacheRuleset
     public const REF_PREFIX = 'dynamic-edge-cache-';
 
     /**
+     * The ref of one of this module's rules for a host. The host is part of it so two hosts in one
+     * zone (apex and www) each keep their own rules.
+     */
+    public function ref(string $host, string $name): string
+    {
+        return self::REF_PREFIX . $this->slug($host) . '-' . $name;
+    }
+
+    protected function slug(string $host): string
+    {
+        return trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($host)), '-');
+    }
+
+    /**
      * Edge lifetime for `/_resources/`. These URLs carry a `?m=` cache-buster for CSS and JS, but
-     * images do not, so keep it well under a year.
+     * images do not, so keep it short and purge the prefix after a deploy that changes them.
      *
      * @config
      * @var int
      */
-    private static $static_edge_ttl = 604800;
+    private static $static_edge_ttl = 86400;
 
     /**
      * @config
@@ -55,6 +69,7 @@ class CacheRuleset
      */
     public function rules(string $host): array
     {
+        $rawHost = $host;
         $host = $this->quote($host);
         $onHost = sprintf('(http.host eq "%s")', $host);
 
@@ -62,15 +77,20 @@ class CacheRuleset
             fn ($path) => sprintf('not starts_with(http.request.uri.path, "%s")', $this->quote($path)),
             (array) static::config()->get('excluded_paths')
         );
+        // The pages rule and the bypasses share this condition, so a bypass never reaches the static
+        // files the static rule caches, or paths the zone's other rules handle.
+        $onPages = sprintf('%s and %s', $onHost, implode(' and ', $excluded));
 
         return [
             $this->rule(
+                $rawHost,
                 'pages',
                 'Cache HTML pages the origin marks cacheable',
-                sprintf('(%s and %s)', $onHost, implode(' and ', $excluded)),
+                sprintf('(%s)', $onPages),
                 ['cache' => true, 'edge_ttl' => ['mode' => 'bypass_by_default']]
             ),
             $this->rule(
+                $rawHost,
                 'static',
                 'Cache theme and module static files',
                 sprintf('(%s and starts_with(http.request.uri.path, "/_resources/"))', $onHost),
@@ -84,64 +104,98 @@ class CacheRuleset
                 ]
             ),
             $this->rule(
+                $rawHost,
                 'bypass-session',
                 'Bypass for a Silverstripe session cookie (editors and visitors with a session)',
-                sprintf('(%s and (http.cookie contains "PHPSESSID" or http.cookie contains "SECSESSID"))', $onHost),
+                sprintf('(%s and (http.cookie contains "PHPSESSID" or http.cookie contains "SECSESSID"))', $onPages),
                 ['cache' => false]
             ),
             $this->rule(
+                $rawHost,
                 'bypass-markdown',
                 'Bypass when the client asks for Markdown (aeo content negotiation)',
-                sprintf('(%s and any(http.request.headers["accept"][*] contains "text/markdown"))', $onHost),
+                sprintf('(%s and any(http.request.headers["accept"][*] contains "text/markdown"))', $onPages),
                 ['cache' => false]
             ),
             $this->rule(
+                $rawHost,
                 'bypass-bots',
                 'Bypass for verified bots so the origin sees them',
-                sprintf('(%s and cf.client.bot)', $onHost),
+                sprintf('(%s and cf.client.bot)', $onPages),
                 ['cache' => false]
             ),
         ];
     }
 
     /**
-     * Whether a rule belongs to this module.
+     * Whether a rule belongs to this module, and to the host when one is given.
      *
      * @param array<string, mixed> $rule
      */
-    public function owns(array $rule): bool
+    public function owns(array $rule, ?string $host = null): bool
     {
-        return str_starts_with((string) ($rule['ref'] ?? ''), self::REF_PREFIX);
+        $prefix = $host === null ? self::REF_PREFIX : self::REF_PREFIX . $this->slug($host) . '-';
+
+        return str_starts_with((string) ($rule['ref'] ?? ''), $prefix);
     }
 
     /**
-     * Existing rules from the zone, minus this module's, with our rules after them.
+     * Existing rules from the zone, minus this module's rules for the host, with the host's rules
+     * after them. Rules written for other hosts stay.
      *
      * @param array<int, array<string, mixed>> $existing rules as the API returned them
      * @return array<int, array<string, mixed>>
      */
     public function merge(array $existing, string $host): array
     {
+        return array_merge($this->removeOwned($existing, $host), $this->rules($host));
+    }
+
+    /**
+     * The zone's existing rules without this module's, for the rollback path.
+     *
+     * @param array<int, array<string, mixed>> $existing rules as the API returned them
+     * @param string|null $host only that host's rules; null removes this module's rules for every host
+     * @return array<int, array<string, mixed>>
+     */
+    public function removeOwned(array $existing, ?string $host = null): array
+    {
         $kept = [];
         foreach ($existing as $rule) {
-            if (!$this->owns($rule)) {
-                $kept[] = array_intersect_key($rule, array_flip([
-                    'id', 'ref', 'expression', 'action', 'action_parameters', 'description', 'enabled',
-                ]));
+            if (!$this->owns($rule, $host)) {
+                $kept[] = $this->writable($rule);
             }
         }
 
-        return array_merge($kept, $this->rules($host));
+        return $kept;
+    }
+
+    /**
+     * A rule as the API accepts it back: read-only fields (version, last_updated) dropped.
+     *
+     * @param array<string, mixed> $rule
+     * @return array<string, mixed>
+     */
+    protected function writable(array $rule): array
+    {
+        return array_intersect_key($rule, array_flip([
+            'id', 'ref', 'expression', 'action', 'action_parameters', 'description', 'enabled',
+        ]));
     }
 
     /**
      * @param array<string, mixed> $parameters
      * @return array<string, mixed>
      */
-    protected function rule(string $name, string $description, string $expression, array $parameters): array
-    {
+    protected function rule(
+        string $host,
+        string $name,
+        string $description,
+        string $expression,
+        array $parameters
+    ): array {
         return [
-            'ref' => self::REF_PREFIX . $name,
+            'ref' => $this->ref($host, $name),
             'description' => 'dynamic/edge-cache: ' . $description,
             'expression' => $expression,
             'action' => 'set_cache_settings',
