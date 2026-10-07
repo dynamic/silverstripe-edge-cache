@@ -14,16 +14,19 @@ use Throwable;
  *   validate=1      have Cloudflare check them (a dry run) without writing
  *   apply=1         check with a dry run, then write
  *   novalidate=1    with apply=1, skip the dry run
- *   remove=1        remove this module's rules and keep every other rule (rollback)
+ *   remove=1        remove this module's rules and keep every other rule (rollback);
+ *                   with host=, only the rules written for that host
  *   host=...        the public host the rules are for (www.example.com)
  *
  * validate=1 and apply=1 require host=: the base URL of a local or staging site is not the host the
- * zone serves, and rules written for it would replace the production rules. The ruleset holds one
- * set of rules, so one host per zone.
+ * zone serves, and rules written for it would not match production traffic. Each host keeps its own
+ * rules, so apex and www can both be provisioned in one zone.
  *
  * Needs the Cloudflare API permission group "Cache Settings" (dashboard: Cache Rules): Read to print
  * the plan, Write (Edit) to validate or change it. Export the token as EDGECACHE_CLOUDFLARE_API_TOKEN
  * for the run.
+ *
+ * A failure prints to stderr and exits 1 under sake, so a script running it can tell.
  */
 class EdgeCacheCloudflareRulesTask extends BuildTask
 {
@@ -37,37 +40,38 @@ class EdgeCacheCloudflareRulesTask extends BuildTask
     public function run($request)
     {
         $provisioner = RulesProvisioner::singleton();
+        $host = trim((string) $request->getVar('host'));
 
         try {
-            if ($request->getVar('remove')) {
-                $removed = $provisioner->remove();
+            if ($this->flag($request->getVar('remove'))) {
+                $removed = $provisioner->remove($host !== '' ? $host : null);
+                $scope = $host !== '' ? ' for ' . $host : '';
                 $this->out($removed
-                    ? sprintf('Removed %d rule(s) belonging to this module; other rules were left alone.', $removed)
-                    : 'This module has no rules in the zone; nothing changed.');
+                    ? sprintf('Removed %d rule(s) belonging to this module%s; other rules were left alone.', $removed, $scope)
+                    : 'This module has no rules in the zone' . $scope . '; nothing changed.');
 
                 return;
             }
 
-            $apply = (bool) $request->getVar('apply');
-            $validate = (bool) $request->getVar('validate');
-            $host = (string) $request->getVar('host');
+            $apply = $this->flag($request->getVar('apply'));
+            $validate = $this->flag($request->getVar('validate'));
             if (($apply || $validate) && $host === '') {
-                $this->out('Pass host=www.example.com: the host the zone serves, not this site\'s base URL. '
-                    . 'Rules written for the wrong host would replace the production rules.');
+                $this->fail('Pass host=www.example.com: the host the zone serves, not this site\'s base URL. '
+                    . 'Rules written for the wrong host match no real traffic.');
 
                 return;
             }
             $host = $host ?: (string) parse_url(Director::absoluteBaseURL(), PHP_URL_HOST);
 
             if ($apply) {
-                $rules = $provisioner->apply($host, !$request->getVar('novalidate'));
+                $rules = $provisioner->apply($host, !$this->flag($request->getVar('novalidate')));
             } elseif ($validate) {
                 $rules = $provisioner->validate($host);
             } else {
                 $rules = $provisioner->plan($host);
             }
         } catch (Throwable $e) {
-            $this->out('Failed: ' . $e->getMessage());
+            $this->fail('Failed: ' . $e->getMessage());
 
             return;
         }
@@ -76,12 +80,22 @@ class EdgeCacheCloudflareRulesTask extends BuildTask
     }
 
     /**
+     * A switch given as `1`, `true` or `yes`. `0`, `false`, `no` and empty are off.
+     */
+    private function flag(mixed $value): bool
+    {
+        return $value !== null && !in_array(strtolower(trim((string) $value)), ['', '0', 'false', 'no', 'off'], true);
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $rules
      */
     private function report(array $rules, string $host, bool $apply, bool $validate): string
     {
-        $mode = $apply ? 'Applied to' : ($validate ? 'Cloudflare accepted this ruleset (nothing written) for' : 'Dry run for');
-        $lines = [$mode . ' host ' . $host . ' (' . count($rules) . ' rules in the zone):', ''];
+        $mode = $apply
+            ? 'Wrote the ruleset for'
+            : ($validate ? 'Cloudflare accepted this ruleset (nothing written) for' : 'Dry run for');
+        $lines = [$mode . ' host ' . $host . ' (' . count($rules) . ' rules in the zone' . ($apply ? ' now' : '') . '):', ''];
         foreach ($rules as $rule) {
             $lines[] = sprintf('- %s', $rule['description'] ?? $rule['ref'] ?? '(unnamed)');
             $lines[] = '    ' . ($rule['expression'] ?? '');
@@ -99,5 +113,37 @@ class EdgeCacheCloudflareRulesTask extends BuildTask
     private function out(string $text): void
     {
         echo Director::is_cli() ? $text . "\n" : '<pre>' . htmlspecialchars($text) . '</pre>';
+    }
+
+    /**
+     * Report a failure so a caller can tell: stderr and exit status 1 under sake, a 500 over HTTP.
+     */
+    private function fail(string $message): void
+    {
+        if (Director::is_cli()) {
+            $this->writeError($message . "\n");
+        } else {
+            http_response_code(500);
+            echo '<pre>' . htmlspecialchars($message) . '</pre>';
+        }
+        $this->terminate(1);
+    }
+
+    /**
+     * Writes to stderr. A test overrides it.
+     */
+    protected function writeError(string $text): void
+    {
+        fwrite(STDERR, $text);
+    }
+
+    /**
+     * Ends the process in CLI. A test overrides it.
+     */
+    protected function terminate(int $code): void
+    {
+        if (Director::is_cli()) {
+            exit($code);
+        }
     }
 }

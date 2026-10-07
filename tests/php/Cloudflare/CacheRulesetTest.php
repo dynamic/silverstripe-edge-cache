@@ -21,12 +21,17 @@ class CacheRulesetTest extends SapphireTest
 
     public function testBypassesComeAfterTheRulesThatMakePagesEligible(): void
     {
-        $refs = array_column((new CacheRuleset())->rules('example.com'), 'ref');
+        $ruleset = new CacheRuleset();
+        $refs = array_column($ruleset->rules('example.com'), 'ref');
 
         $this->assertSame(
-            ['pages', 'static', 'bypass-session', 'bypass-markdown', 'bypass-bots'],
-            array_map(fn ($ref) => substr($ref, strlen(CacheRuleset::REF_PREFIX)), $refs)
+            array_map(
+                fn ($name) => $ruleset->ref('example.com', $name),
+                ['pages', 'static', 'bypass-session', 'bypass-markdown', 'bypass-bots']
+            ),
+            $refs
         );
+        $this->assertSame('dynamic-edge-cache-example-com-pages', $refs[0]);
     }
 
     public function testPagesRuleRespectsTheOriginAndSkipsAdmin(): void
@@ -39,14 +44,15 @@ class CacheRulesetTest extends SapphireTest
 
     public function testBypassRules(): void
     {
-        $rules = array_column((new CacheRuleset())->rules('example.com'), null, 'ref');
-        $prefix = CacheRuleset::REF_PREFIX;
+        $ruleset = new CacheRuleset();
+        $rules = array_column($ruleset->rules('example.com'), null, 'ref');
+        $ref = fn ($name) => $ruleset->ref('example.com', $name);
 
-        $this->assertStringContainsString('PHPSESSID', $rules[$prefix . 'bypass-session']['expression']);
-        $this->assertStringContainsString('SECSESSID', $rules[$prefix . 'bypass-session']['expression']);
-        $this->assertStringContainsString('text/markdown', $rules[$prefix . 'bypass-markdown']['expression']);
-        $this->assertStringContainsString('cf.client.bot', $rules[$prefix . 'bypass-bots']['expression']);
-        $this->assertSame(['cache' => false], $rules[$prefix . 'bypass-bots']['action_parameters']);
+        $this->assertStringContainsString('PHPSESSID', $rules[$ref('bypass-session')]['expression']);
+        $this->assertStringContainsString('SECSESSID', $rules[$ref('bypass-session')]['expression']);
+        $this->assertStringContainsString('text/markdown', $rules[$ref('bypass-markdown')]['expression']);
+        $this->assertStringContainsString('cf.client.bot', $rules[$ref('bypass-bots')]['expression']);
+        $this->assertSame(['cache' => false], $rules[$ref('bypass-bots')]['action_parameters']);
     }
 
     public function testMergeKeepsForeignRulesAndReplacesItsOwn(): void
@@ -80,15 +86,15 @@ class CacheRulesetTest extends SapphireTest
 
     public function testOnlyTheStaticRuleReachesStaticFiles(): void
     {
-        $rules = array_column((new CacheRuleset())->rules('example.com'), null, 'ref');
-        $prefix = CacheRuleset::REF_PREFIX;
+        $ruleset = new CacheRuleset();
+        $rules = array_column($ruleset->rules('example.com'), null, 'ref');
 
         foreach (['pages', 'bypass-session', 'bypass-markdown', 'bypass-bots'] as $name) {
-            $expression = $rules[$prefix . $name]['expression'];
+            $expression = $rules[$ruleset->ref('example.com', $name)]['expression'];
             $this->assertStringContainsString('not starts_with(http.request.uri.path, "/_resources")', $expression, $name);
             $this->assertStringContainsString('not starts_with(http.request.uri.path, "/assets")', $expression, $name);
         }
-        $this->assertStringNotContainsString('not starts_with', $rules[$prefix . 'static']['expression']);
+        $this->assertStringNotContainsString('not starts_with', $rules[$ruleset->ref('example.com', 'static')]['expression']);
     }
 
     public function testRemoveOwnedKeepsEveryOtherRule(): void
@@ -115,5 +121,18 @@ class CacheRulesetTest extends SapphireTest
         $static = (new CacheRuleset())->rules('example.com')[1];
 
         $this->assertSame(86400, $static['action_parameters']['edge_ttl']['default']);
+    }
+
+    public function testEachHostKeepsItsOwnRules(): void
+    {
+        $ruleset = new CacheRuleset();
+
+        $both = $ruleset->merge($ruleset->merge([], 'example.com'), 'www.example.com');
+        $again = $ruleset->merge($both, 'example.com');
+
+        $this->assertCount(10, $both, 'the second host did not replace the first');
+        $this->assertCount(10, $again, 're-applying one host replaces only its own rules');
+        $this->assertCount(5, $ruleset->removeOwned($both, 'example.com'), 'removing one host leaves the other');
+        $this->assertCount(0, $ruleset->removeOwned($both), 'with no host, every host');
     }
 }

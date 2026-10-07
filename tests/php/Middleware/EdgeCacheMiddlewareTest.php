@@ -176,4 +176,28 @@ class EdgeCacheMiddlewareTest extends EdgeCacheTestCase
 
         $this->assertSame('X-Forwarded-Protocol, Accept', $response->getHeader('Vary'));
     }
+
+    public function testAVaryTheEdgeCannotDropKeepsThePageOutOfTheEdge(): void
+    {
+        $this->adapter->allowedVary = ['Accept-Encoding'];
+
+        foreach (['Cookie', 'Accept-Language', '*', 'X-Forwarded-Protocol, Cookie'] as $vary) {
+            $response = $this->respond(headers: ['Vary' => $vary]);
+
+            $this->assertNull($response->getHeader('Edge-Cache-Control'), $vary);
+            $this->assertSame('private, must-revalidate', $response->getHeader('Cache-Control'), $vary);
+            $this->assertSame($vary, $response->getHeader('Vary'), 'a response that is not cached keeps its Vary');
+        }
+    }
+
+    public function testTheIgnorableVaryValuesAreConfigurable(): void
+    {
+        $this->adapter->allowedVary = ['Accept-Encoding'];
+        EdgeCache::config()->set('vary_ignorable', ['Accept-Language']);
+
+        $response = $this->respond(headers: ['Vary' => 'Accept-Language']);
+
+        $this->assertNotNull($response->getHeader('Edge-Cache-Control'));
+        $this->assertNull($response->getHeader('Vary'));
+    }
 }

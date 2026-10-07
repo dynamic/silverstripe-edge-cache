@@ -3,7 +3,7 @@
 namespace Dynamic\EdgeCache\Tests\Task;
 
 use Dynamic\EdgeCache\Cloudflare\RulesProvisioner;
-use Dynamic\EdgeCache\Task\EdgeCacheCloudflareRulesTask;
+use Dynamic\EdgeCache\Tests\Fixtures\TestableRulesTask;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -17,6 +17,8 @@ use SilverStripe\Dev\SapphireTest;
 class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
 {
     private array $history = [];
+
+    private TestableRulesTask $task;
 
     protected function setUp(): void
     {
@@ -42,8 +44,9 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
             RulesProvisioner::class
         );
 
+        $this->task = new TestableRulesTask();
         ob_start();
-        (new EdgeCacheCloudflareRulesTask())->run(new HTTPRequest('GET', '', $vars));
+        $this->task->run(new HTTPRequest('GET', '', $vars));
 
         return (string) ob_get_clean();
     }
@@ -75,11 +78,11 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
     {
         $out = $this->runTask(['host' => 'example.com', 'apply' => '1'], $this->ok(), $this->ok(), $this->ok());
 
-        $this->assertStringContainsString('Applied to host example.com', $out);
+        $this->assertStringContainsString('Wrote the ruleset for host example.com', $out);
         $this->assertCount(3, $this->history);
     }
 
-    public function testAFailureIsReportedNotThrown(): void
+    public function testAFailureGoesToStderrAndExitsNonZero(): void
     {
         $out = $this->runTask(
             ['host' => 'example.com', 'apply' => '1'],
@@ -87,9 +90,30 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
             new Response(400, [], json_encode(['success' => false, 'errors' => [['message' => 'bad expression']]]))
         );
 
-        $this->assertStringContainsString('Failed:', $out);
-        $this->assertStringContainsString('bad expression', $out);
+        $this->assertSame('', $out, 'nothing is reported as a success');
+        $this->assertStringContainsString('bad expression', $this->task->stderr);
+        $this->assertStringContainsString('Failed:', $this->task->stderr);
+        $this->assertSame(1, $this->task->exitCode);
         $this->assertCount(2, $this->history, 'the real write never happened');
+    }
+
+    public function testASuccessDoesNotExitNonZero(): void
+    {
+        $this->runTask(['host' => 'example.com', 'validate' => '1'], $this->ok(), $this->ok());
+
+        $this->assertNull($this->task->exitCode);
+        $this->assertSame('', $this->task->stderr);
+    }
+
+    public function testSwitchesGivenAsFalseAreOff(): void
+    {
+        foreach (['0', 'false', 'no', ''] as $value) {
+            $this->history = [];
+            $out = $this->runTask(['host' => 'example.com', 'apply' => $value], $this->ok());
+
+            $this->assertStringContainsString('Dry run for', $out, "apply=$value");
+            $this->assertCount(1, $this->history, "apply=$value wrote nothing");
+        }
     }
 
     public function testValidateAndApplyRefuseWithoutAHost(): void
@@ -98,7 +122,8 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
             $this->history = [];
             $out = $this->runTask([$mode => '1']);
 
-            $this->assertStringContainsString('Pass host=', $out, $mode);
+            $this->assertStringContainsString('Pass host=', $this->task->stderr, $mode);
+            $this->assertSame(1, $this->task->exitCode, $mode);
             $this->assertCount(0, $this->history, 'nothing was sent to Cloudflare for ' . $mode);
         }
     }
@@ -118,5 +143,15 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
         $out = $this->runTask(['remove' => '1'], $existing, $this->ok());
 
         $this->assertStringContainsString('Removed 5 rule(s)', $out);
+    }
+
+    public function testRemoveForAHostSaysWhichOne(): void
+    {
+        $ours = (new \Dynamic\EdgeCache\Cloudflare\CacheRuleset())->rules('example.com');
+        $existing = new Response(200, [], json_encode(['success' => true, 'result' => ['rules' => $ours]]));
+
+        $out = $this->runTask(['remove' => '1', 'host' => 'other.example.com'], $existing);
+
+        $this->assertStringContainsString('no rules in the zone for other.example.com', $out);
     }
 }
