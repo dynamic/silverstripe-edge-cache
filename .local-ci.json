@@ -1,0 +1,5 @@
+{
+  "checks": [
+    { "label": "PHPUnit in the DDEV dev harness", "run": "scripts/test.sh" }
+  ]
+}

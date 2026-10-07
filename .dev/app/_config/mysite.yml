@@ -1,0 +1,13 @@
+---
+Name: dev-app
+---
+SilverStripe\Core\Manifest\ModuleManifest:
+  project: app
+---
+Name: dev-edgecache
+After: '#dynamic-edgecache-adapter'
+---
+# The harness runs the Cloudflare adapter so headers can be inspected over HTTP.
+SilverStripe\Core\Injector\Injector:
+  Dynamic\EdgeCache\Adapter\EdgeCacheAdapter:
+    class: Dynamic\EdgeCache\Adapter\CloudflareAdapter

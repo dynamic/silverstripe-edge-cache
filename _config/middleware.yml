@@ -1,0 +1,11 @@
+---
+Name: dynamic-edgecache-middleware
+Before:
+  - '#requestprocessors'
+---
+# Outside core's cache-control middleware, so it sees the final Cache-Control.
+SilverStripe\Core\Injector\Injector:
+  SilverStripe\Control\Director:
+    properties:
+      Middlewares:
+        EdgeCacheMiddleware: '%$Dynamic\EdgeCache\Middleware\EdgeCacheMiddleware'

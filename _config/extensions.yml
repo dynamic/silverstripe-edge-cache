@@ -1,0 +1,26 @@
+---
+Name: dynamic-edgecache-extensions
+---
+SilverStripe\SiteConfig\SiteConfig:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheSiteConfigExtension
+
+SilverStripe\CMS\Model\SiteTree:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheSiteTreeExtension
+
+SilverStripe\CMS\Controllers\ContentController:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheControllerExtension
+
+SilverStripe\Assets\File:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheFileExtension
+---
+Name: dynamic-edgecache-elemental
+Only:
+  classexists: 'DNADesign\Elemental\Models\BaseElement'
+---
+DNADesign\Elemental\Models\BaseElement:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheElementExtension

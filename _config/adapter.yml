@@ -1,0 +1,11 @@
+---
+Name: dynamic-edgecache-adapter
+---
+# No CDN configured: the module logs purges and sends no edge headers. A site picks its CDN:
+#
+#   SilverStripe\Core\Injector\Injector:
+#     Dynamic\EdgeCache\Adapter\EdgeCacheAdapter:
+#       class: Dynamic\EdgeCache\Adapter\CloudflareAdapter
+SilverStripe\Core\Injector\Injector:
+  Dynamic\EdgeCache\Adapter\EdgeCacheAdapter:
+    class: Dynamic\EdgeCache\Adapter\NullAdapter

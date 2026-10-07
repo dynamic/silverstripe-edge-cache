@@ -1,0 +1,29 @@
+.ddev/
+.DS_Store
+.env
+.phpunit.result.cache
+*.css.map
+*.js.map
+/public/
+/vendor/
+composer.lock
+node_modules/
+vendor/
+yarn-error.log
+# Dev harness: an SS5 project that installs the module by path. Track only its source.
+/.dev/*
+!/.dev/composer.json
+!/.dev/phpunit.xml.dist
+!/.dev/_manifest_exclude
+!/.dev/app/
+/.dev/app/.htaccess
+/.dev/app/_config/mimevalidator.yml
+
+# Dev harness: an SS5 project that installs the module by path. Track only its source.
+/.dev/*
+!/.dev/composer.json
+!/.dev/phpunit.xml.dist
+!/.dev/_manifest_exclude
+!/.dev/app/
+/.dev/app/.htaccess
+/.dev/app/_config/mimevalidator.yml

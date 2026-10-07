@@ -1,0 +1,63 @@
+{
+    "name": "dynamic/silverstripe-edge-cache-dev",
+    "description": "Local dev harness: an SS5 project that installs the module via a path repository",
+    "type": "project",
+    "require": {
+        "php": "^8.1",
+        "silverstripe/recipe-cms": "^5.3",
+        "dynamic/silverstripe-edge-cache": "@dev",
+        "silverstripe/recipe-testing": "^3",
+        "dnadesign/silverstripe-elemental": "^5.3",
+        "squizlabs/php_codesniffer": "^3",
+        "phpstan/phpstan": "^1.10 || ^2",
+        "cambis/silverstan": "^2.2",
+        "phpstan/extension-installer": "^1.4"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "..",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true,
+            "silverstripe/vendor-plugin": true,
+            "silverstripe/recipe-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "project-files": [
+            "app/*"
+        ],
+        "project-files-installed": [
+            ".htaccess",
+            "app/.htaccess",
+            "app/_config/mimevalidator.yml",
+            "app/_config/mysite.yml",
+            "behat.yml",
+            "phpunit.xml.dist"
+        ],
+        "public-files-installed": [
+            ".htaccess",
+            "index.php",
+            "web.config"
+        ]
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "autoload-dev": {
+        "psr-4": {
+            "Dynamic\\EdgeCache\\Tests\\": "vendor/dynamic/silverstripe-edge-cache/tests/php/"
+        }
+    }
+}

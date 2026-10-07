@@ -1,0 +1,10 @@
+/.dev             export-ignore
+/tests            export-ignore
+/scripts          export-ignore
+/.editorconfig    export-ignore
+/.gitattributes   export-ignore
+/.gitignore       export-ignore
+/.local-ci.json   export-ignore
+/phpcs.xml.dist   export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml.dist export-ignore
