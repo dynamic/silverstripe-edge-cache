@@ -52,7 +52,10 @@ class EdgeCachePurgeTask extends BuildTask
         }
 
         if (!$what) {
-            $this->out('Nothing to purge. Pass everything=1, tag=a,b or purge_url=https://...');
+            // A script that meant to purge something must not read this as success. Under sake `url=`
+            // never arrives (sake overwrites it with the task's path), so the old form lands here.
+            $this->fail('Nothing to purge. Pass everything=1, tag=a,b or purge_url=https://... (under sake, '
+                . 'url= is replaced by the task path: use purge_url=).');
 
             return;
         }
@@ -68,8 +71,8 @@ class EdgeCachePurgeTask extends BuildTask
     }
 
     /**
-     * Absolute URLs from purge_url. sake sets its own `url` variable to the task's path, so `url` is
-     * only read when it is an absolute URL (the form older docs described).
+     * Absolute URLs from purge_url. sake overwrites its `url` variable with the task's path, so `url=`
+     * never reaches the task under sake; it is only read over HTTP, and only when it is an absolute URL.
      *
      * @return string[]
      */

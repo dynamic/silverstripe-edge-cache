@@ -59,13 +59,18 @@ class CacheRuleset
     /**
      * User-agent tokens of crawlers that bypass the cache, so the origin sees them (the aeo
      * crawler log). `cf.client.bot` would match verified bots, but Cache Rules reject it on the
-     * Free plan, so crawlers are matched by user agent. An empty list leaves the rule out.
+     * Free plan, so crawlers are matched by user agent, case-insensitively (Meta's crawlers send
+     * lowercase tokens).
+     *
+     * Silverstripe config merges arrays, so a YAML list adds to these and `[]` changes nothing. To
+     * leave the rule out set the value to null in YAML (`bot_user_agents: null`), or replace the
+     * list from PHP with `Config::modify()->set(CacheRuleset::class, 'bot_user_agents', [...])`.
      *
      * @config
      * @var string[]
      */
     private static $bot_user_agents = [
-        'Amazonbot', 'Amzn-SearchBot', 'Amzn-User', 'Applebot-Extended', 'CCBot', 'ChatGPT-User',
+        'Amazonbot', 'Amzn-SearchBot', 'Amzn-User', 'Applebot', 'CCBot', 'ChatGPT-User',
         'Claude-SearchBot', 'Claude-User', 'ClaudeBot', 'DuckAssistBot', 'GPTBot', 'Meta-ExternalAgent',
         'Meta-ExternalFetcher', 'Meta-WebIndexer', 'MistralAI-Index', 'MistralAI-Training',
         'MistralAI-User', 'OAI-SearchBot', 'Perplexity-User', 'PerplexityBot',
@@ -152,7 +157,7 @@ class CacheRuleset
         }
 
         $match = implode(' or ', array_map(
-            fn ($agent) => sprintf('http.user_agent contains "%s"', $this->quote((string) $agent)),
+            fn ($agent) => sprintf('lower(http.user_agent) contains "%s"', $this->quote(strtolower((string) $agent))),
             $agents
         ));
 

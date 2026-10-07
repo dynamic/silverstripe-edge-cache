@@ -48,7 +48,7 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $this->assertStringNotContainsString('urls', $out);
     }
 
-    public function testAnAbsoluteUrlGivenAsUrlStillWorks(): void
+    public function testAnAbsoluteUrlGivenAsUrlStillWorksOverHttp(): void
     {
         $this->runTask(['url' => 'https://example.com/a.pdf']);
 
@@ -93,11 +93,23 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $this->assertSame([], $this->adapter->calls);
     }
 
-    public function testWithNothingToPurgeItSaysSo(): void
+    public function testWithNothingToPurgeItFailsSoAScriptCannotReadItAsSuccess(): void
     {
         $out = $this->runTask([]);
 
-        $this->assertStringContainsString('Nothing to purge', $out);
-        $this->assertNull($this->task->exitCode);
+        $this->assertSame('', $out);
+        $this->assertStringContainsString('Nothing to purge', $this->task->stderr);
+        $this->assertStringContainsString('purge_url=', $this->task->stderr);
+        $this->assertSame(1, $this->task->exitCode);
+        $this->assertSame([], $this->adapter->calls);
+    }
+
+    public function testTheOldUrlFormUnderSakeFailsInsteadOfDoingNothing(): void
+    {
+        // sake replaces `url` with the task path, so a script still passing url=https://... sends no URL.
+        $this->runTask(['url' => 'dev/tasks/edge-cache-purge']);
+
+        $this->assertSame(1, $this->task->exitCode);
+        $this->assertSame([], $this->adapter->calls);
     }
 }

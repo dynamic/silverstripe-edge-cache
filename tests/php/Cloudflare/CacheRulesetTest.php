@@ -58,8 +58,10 @@ class CacheRulesetTest extends SapphireTest
         $this->assertStringContainsString('PHPSESSID', $rules[$ref('bypass-session')]['expression']);
         $this->assertStringContainsString('SECSESSID', $rules[$ref('bypass-session')]['expression']);
         $this->assertStringContainsString('text/markdown', $rules[$ref('bypass-markdown')]['expression']);
-        $this->assertStringContainsString('http.user_agent contains "GPTBot"', $rules[$ref('bypass-bots')]['expression']);
-        $this->assertStringContainsString('http.user_agent contains "ClaudeBot"', $rules[$ref('bypass-bots')]['expression']);
+        // Matched case-insensitively: Meta's crawlers send lowercase tokens.
+        $this->assertStringContainsString('lower(http.user_agent) contains "gptbot"', $rules[$ref('bypass-bots')]['expression']);
+        $expression = $rules[$ref('bypass-bots')]['expression'];
+        $this->assertStringContainsString('lower(http.user_agent) contains "meta-externalagent"', $expression);
         $this->assertStringNotContainsString('cf.client.bot', $rules[$ref('bypass-bots')]['expression'], 'rejected on Free');
         $this->assertSame(['cache' => false], $rules[$ref('bypass-bots')]['action_parameters']);
     }
@@ -142,7 +144,8 @@ class CacheRulesetTest extends SapphireTest
 
     public function testNoCrawlersListedLeavesTheBotRuleOut(): void
     {
-        CacheRuleset::config()->set('bot_user_agents', []);
+        // From YAML, `bot_user_agents: null` is the opt-out; `[]` merges with the defaults and changes nothing.
+        CacheRuleset::config()->set('bot_user_agents', null);
 
         $refs = array_column((new CacheRuleset())->rules('example.com'), 'ref');
 
@@ -157,7 +160,7 @@ class CacheRulesetTest extends SapphireTest
         $rules = array_column((new CacheRuleset())->rules('example.com'), null, 'ref');
 
         $expression = $rules['dynamic-edge-cache-example-com-bypass-bots']['expression'];
-        $this->assertStringContainsString('http.user_agent contains "My\\"Bot"', $expression);
+        $this->assertStringContainsString('lower(http.user_agent) contains "my\\"bot"', $expression);
     }
 
     public function testEachHostKeepsItsOwnRules(): void
