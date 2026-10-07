@@ -25,12 +25,46 @@ use SilverStripe\Versioned\Versioned;
 class EdgeCacheSiteTreeExtension extends DataExtension
 {
     /**
+     * Tag a page that lists this page's children (`$Children`, `$AllChildren`) with
+     * `ec-children-<id>`, so publishing a child purges it. Off by default, because a menu lists the
+     * children of every top-level page: tagging those would make a content-only edit to any child
+     * purge every page. Turn it on for a class whose children are shown elsewhere (a news holder
+     * listed on the home page), and only when no menu reads its children: even `<% if $Children %>` in
+     * a menu item counts:
+     *
+     *     App\Pages\NewsHolder:
+     *       edge_cache_tag_children: true
+     *
+     * @config
+     * @var bool
+     */
+    private static $edge_cache_tag_children = false;
+
+    /**
      * Fields whose change alters every page's navigation.
      *
      * @config
      * @var string[]
      */
     private static $structural_fields = ['Title', 'MenuTitle', 'URLSegment', 'ShowInMenus', 'Sort', 'ParentID'];
+
+    /**
+     * Called by Hierarchy when `$Children` or `$AllChildren` is read, with this page as the owner.
+     * Only records while a front-end page is being rendered (EdgeCache::isCollecting()).
+     *
+     * @param mixed $staged
+     * @param mixed $showAll
+     */
+    public function augmentStageChildren($staged, $showAll): void
+    {
+        if (!EdgeCache::isCollecting() || !$this->owner->ID) {
+            return;
+        }
+
+        if ($this->owner->config()->get('edge_cache_tag_children')) {
+            EdgeCache::singleton()->addTags(EdgeCache::childrenTag($this->owner->ID));
+        }
+    }
 
     /**
      * `publishSingle()` path (CMS publish button, `publishRecursive()`).
@@ -87,6 +121,10 @@ class EdgeCacheSiteTreeExtension extends DataExtension
         $tags = array_merge([EdgeCache::pageTag($owner->ID)], EdgeCache::classChainTags(get_class($owner)));
         foreach ($this->ancestorIds() as $id) {
             $tags[] = EdgeCache::pageTag($id);
+        }
+        if ($incoming->ParentID) {
+            // Pages that list the parent's children (edge_cache_tag_children).
+            $tags[] = EdgeCache::childrenTag($incoming->ParentID);
         }
         $queue->addTags($tags);
     }

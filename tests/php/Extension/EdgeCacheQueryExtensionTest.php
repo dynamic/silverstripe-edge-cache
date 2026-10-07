@@ -205,7 +205,6 @@ class EdgeCacheQueryExtensionTest extends EdgeCacheTestCase
                 'DNADesign\\Elemental\\Models\\ElementalArea',
                 'SilverStripe\\SiteConfig\\SiteConfig',
                 'SilverStripe\\Assets\\File',
-                'SilverStripe\\Security\\Member',
                 'SilverStripe\\Security\\Group',
             ],
             (array) EdgeCache::config()->get('auto_tag_ignore_descendants')

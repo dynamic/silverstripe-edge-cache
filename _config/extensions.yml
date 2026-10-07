@@ -20,6 +20,10 @@ SilverStripe\Assets\File:
 SilverStripe\ORM\DataObject:
   extensions:
     - Dynamic\EdgeCache\Extension\EdgeCacheQueryExtension
+
+SilverStripe\Security\Member:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheMemberExtension
 ---
 Name: dynamic-edgecache-elemental
 Only:

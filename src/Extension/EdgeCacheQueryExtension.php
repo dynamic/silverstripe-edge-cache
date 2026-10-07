@@ -10,6 +10,7 @@ use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\DataQuery;
 use SilverStripe\ORM\Queries\SQLSelect;
 use SilverStripe\ORM\RelationList;
+use SilverStripe\Security\Member;
 use SilverStripe\SiteConfig\SiteConfig;
 
 /**
@@ -51,7 +52,8 @@ class EdgeCacheQueryExtension extends DataExtension
      * record handing out the list and the class it lists uses EdgeCachePurgeable. The other side is
      * the class as declared on the relation, so a subclass tag is not purged from there. A list of
      * Settings records edited from the other side clears the site, as editing it from Settings does
-     * (EdgeCacheSiteConfigExtension).
+     * (EdgeCacheSiteConfigExtension). A list of members, or any list a member hands out (a group's
+     * members, a member's groups), purges the pages that listed members.
      */
     public function updateManyManyComponents(RelationList $list): void
     {
@@ -62,13 +64,18 @@ class EdgeCacheQueryExtension extends DataExtension
             }
         }
         $settings = is_a($list->dataClass(), SiteConfig::class, true);
-        if (!$classes && !$settings) {
+        $memberClass = is_a($list->dataClass(), Member::class, true) ? $list->dataClass() : null;
+        $memberClass ??= $this->owner instanceof Member ? get_class($this->owner) : null;
+        if (!$classes && !$settings && !$memberClass) {
             return;
         }
 
-        $callback = function () use ($classes, $settings): void {
+        $callback = function () use ($classes, $settings, $memberClass): void {
             if ($settings) {
                 PurgeQueue::singleton()->addEverything();
+            }
+            if ($memberClass) {
+                PurgeQueue::singleton()->addTags(EdgeCache::classChainTags($memberClass));
             }
             foreach ($classes as $class) {
                 EdgeCachePurgeable::purgeClass($class);
