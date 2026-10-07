@@ -7,6 +7,9 @@ use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use SilverStripe\Assets\Dev\TestAssetStore;
 use SilverStripe\Assets\File;
 use SilverStripe\Assets\Folder;
+use SilverStripe\Assets\Storage\AssetStore;
+use SilverStripe\Control\Director;
+use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Versioned\Versioned;
 
 /**
@@ -102,6 +105,56 @@ class EdgeCacheFileExtensionTest extends EdgeCacheTestCase
         $folder->doArchive();
 
         $this->assertContains($url, PurgeQueue::singleton()->pending()['urls']);
+    }
+
+    /**
+     * Writes a resized variant next to a published file, as a template's `$Image.Fill(...)` does, and
+     * returns its public URL.
+     */
+    private function variantOf(File $file, string $variant = 'FillWzEwMCwxMDBd'): string
+    {
+        $store = Injector::inst()->get(AssetStore::class);
+        $store->setFromString('variant', $file->getFilename(), $file->getHash(), $variant);
+
+        return Director::absoluteURL(
+            $store->getAsURL($file->getFilename(), $file->getHash(), $variant, false)
+        );
+    }
+
+    public function testArchivingAFilePurgesItsResizedVariantsToo(): void
+    {
+        $file = $this->publishedFile();
+        $variantUrl = $this->variantOf($file);
+        $original = $file->getAbsoluteURL();
+        $this->assertNotSame($original, $variantUrl);
+
+        $file->doArchive();
+
+        $urls = PurgeQueue::singleton()->pending()['urls'];
+        $this->assertContains($original, $urls);
+        $this->assertContains($variantUrl, $urls);
+    }
+
+    public function testUnpublishingAFilePurgesItsResizedVariantsToo(): void
+    {
+        $file = $this->publishedFile();
+        $variantUrl = $this->variantOf($file);
+
+        $file->doUnpublish();
+
+        $this->assertContains($variantUrl, PurgeQueue::singleton()->pending()['urls']);
+    }
+
+    public function testReplacingAFilesContentPurgesTheOldVariants(): void
+    {
+        $file = $this->publishedFile();
+        $variantUrl = $this->variantOf($file);
+
+        $file->setFromString('second version', 'cache-test.txt');
+        $file->write();
+        $file->publishSingle();
+
+        $this->assertContains($variantUrl, PurgeQueue::singleton()->pending()['urls']);
     }
 
     public function testArchivingADraftOnlyFileQueuesNothing(): void
