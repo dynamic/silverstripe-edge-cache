@@ -4,7 +4,7 @@ namespace Dynamic\EdgeCache\Extension;
 
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\Assets\File;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 
 /**
  * Purges a file's public URL when the file is published, replaced, unpublished or deleted.
@@ -15,7 +15,7 @@ use SilverStripe\ORM\DataExtension;
  *
  * @property File|static $owner
  */
-class EdgeCacheFileExtension extends DataExtension
+class EdgeCacheFileExtension extends Extension
 {
     public function onAfterPublish(&$original): void
     {

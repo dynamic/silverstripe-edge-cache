@@ -19,16 +19,16 @@
         }
     ],
     "require": {
-        "php": "^8.1",
-        "silverstripe/framework": "^5.3",
-        "silverstripe/cms": "^5.3",
-        "silverstripe/siteconfig": "^5",
-        "silverstripe/versioned": "^2",
+        "php": "^8.3",
+        "silverstripe/framework": "^6",
+        "silverstripe/cms": "^6",
+        "silverstripe/siteconfig": "^6",
+        "silverstripe/versioned": "^3",
         "guzzlehttp/guzzle": "^7.5"
     },
     "require-dev": {
-        "silverstripe/recipe-testing": "^3",
-        "dnadesign/silverstripe-elemental": "^5.3",
+        "silverstripe/recipe-testing": "^4",
+        "dnadesign/silverstripe-elemental": "^6",
         "squizlabs/php_codesniffer": "^3",
         "phpstan/phpstan": "^1.10||^2",
         "cambis/silverstan": "^2.2",
@@ -47,6 +47,11 @@
     "autoload-dev": {
         "psr-4": {
             "Dynamic\\EdgeCache\\Tests\\": "tests/php/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-2": "2.x-dev"
         }
     }
 }

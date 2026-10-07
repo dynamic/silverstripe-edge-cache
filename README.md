@@ -7,13 +7,18 @@ Serve Silverstripe HTML from a CDN edge cache instead of rendering every request
 | Edge headers | `Cloudflare-CDN-Cache-Control` (lifetime, `stale-while-revalidate`, `stale-if-error`) and `Cache-Tag` on pages the origin has marked public |
 | Safe by default | Live only, Live stage only, off until ticked in Settings. Sessions, CSRF forms, errors, redirects, cookies and non-GET requests are never cached |
 | Purge on publish | Per-page tag purge, ancestors included, one batched request per PHP request. Navigation-affecting changes and Settings saves clear the site |
-| Cache Rules task | `sake dev/tasks/edge-cache-cloudflare-rules` previews and applies the Cloudflare rules the module needs |
-| Manual purge | `sake dev/tasks/edge-cache-purge` with `everything=1`, `tag=` or `purge_url=` (under sake `url=` is overwritten by the task path) |
+| Cache Rules task | `sake tasks:edge-cache-cloudflare-rules` previews and applies the Cloudflare rules the module needs |
+| Manual purge | `sake tasks:edge-cache-purge` with `--everything`, `--tag=` or `--purge-url=` |
 
 ## Requirements
 
-- PHP ^8.1, Silverstripe CMS ^5.3
+- PHP ^8.3, Silverstripe CMS ^6
 - A Cloudflare zone and an API token
+
+| Branch | Silverstripe | Status |
+|---|---|---|
+| `2` | CMS 6 | Active |
+| `1` | CMS 5 (PHP ^8.1) | Maintenance: fixes only |
 
 ## Install
 

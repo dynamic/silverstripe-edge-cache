@@ -9,7 +9,6 @@ use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\FieldType\DBDate;
 use SilverStripe\ORM\FieldType\DBDatetime;
-use SilverStripe\ORM\FieldType\DBField;
 
 /**
  * Finds the next moment a scheduled record starts or ends showing, so a page that lists such
@@ -71,7 +70,7 @@ class ScheduleWindows
             return null;
         }
 
-        $timestamp = DBField::create_field(DBDatetime::class, $value)->getTimestamp();
+        $timestamp = DBDatetime::create_field(DBDatetime::class, $value)->getTimestamp();
 
         return $dateOnly && $timestamp <= $nowTimestamp ? $timestamp + self::DAY : $timestamp;
     }

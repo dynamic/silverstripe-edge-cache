@@ -92,7 +92,7 @@ It works from either side of the relation: ticking groups on a link purges for t
 
 Dragging rows into a new order in a `GridFieldOrderableRows` purges too, for a plain `many_many` with an extra sort field and for `many_many` through.
 
-Not seen: changes made with raw SQL, other sortable GridField modules, `ManyManyList::setExtraData()`, and adding an already-linked record to a `many_many` through list just to change its extra fields. After one of those, save the owner record or run `sake dev/tasks/edge-cache-purge everything=1`.
+Not seen: changes made with raw SQL, other sortable GridField modules, `ManyManyList::setExtraData()`, and adding an already-linked record to a `many_many` through list just to change its extra fields. After one of those, save the owner record or run `sake tasks:edge-cache-purge --everything`.
 
 It has no effect on a class in the ignore lists (files, elements): no page carries a tag for those, and files and elements purge through their own hooks. It is opt-in per class on purpose: a purge for every write to every record would send API calls for form submissions and sessions, and Cloudflare's Free plan allows five tag purges a minute.
 

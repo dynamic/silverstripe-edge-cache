@@ -2,45 +2,32 @@
 
 namespace Dynamic\EdgeCache\Task;
 
-use SilverStripe\Control\Director;
+use SilverStripe\PolyExecution\PolyOutput;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 /**
- * Output and failure reporting for the module's tasks. A failure goes to stderr and ends a sake run
- * with exit status 1 (a 500 over HTTP), so a deploy script running a task can tell it failed.
+ * Output and failure reporting for the module's tasks. A failure is written as an error and returned
+ * as a non-zero exit code, so a deploy script running the task can tell it failed (sake exits 1).
  */
 trait ReportsTaskResults
 {
-    protected function out(string $text): void
+    /**
+     * Writes plain text, one line per line break. Text is escaped so a `<` in a message is not read
+     * as console formatting.
+     */
+    protected function out(PolyOutput $output, string $text): void
     {
-        echo Director::is_cli() ? $text . "\n" : '<pre>' . htmlspecialchars($text) . '</pre>';
-    }
-
-    protected function fail(string $message): void
-    {
-        if (Director::is_cli()) {
-            $this->writeError($message . "\n");
-        } else {
-            http_response_code(500);
-            echo '<pre>' . htmlspecialchars($message) . '</pre>';
-        }
-        $this->terminate(1);
+        $output->writeln(explode("\n", OutputFormatter::escape($text)));
     }
 
     /**
-     * Writes to stderr. A test overrides it.
+     * Writes the message as an error and returns the failure exit code for the task to return.
      */
-    protected function writeError(string $text): void
+    protected function fail(PolyOutput $output, string $message): int
     {
-        fwrite(STDERR, $text);
-    }
+        $output->writeln('<error>' . OutputFormatter::escape($message) . '</error>');
 
-    /**
-     * Ends the process in CLI. A test overrides it.
-     */
-    protected function terminate(int $code): void
-    {
-        if (Director::is_cli()) {
-            exit($code);
-        }
+        return Command::FAILURE;
     }
 }

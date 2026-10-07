@@ -6,7 +6,7 @@ use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\Forms\CheckboxField;
 use SilverStripe\Forms\FieldList;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripe\ORM\RelationList;
 use SilverStripe\SiteConfig\SiteConfig;
 
@@ -23,7 +23,7 @@ use SilverStripe\SiteConfig\SiteConfig;
  * @property SiteConfig|static $owner
  * @property bool $EdgeCacheEnabled
  */
-class EdgeCacheSiteConfigExtension extends DataExtension
+class EdgeCacheSiteConfigExtension extends Extension
 {
     private static $db = [
         'EdgeCacheEnabled' => 'Boolean',

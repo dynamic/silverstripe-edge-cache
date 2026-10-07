@@ -4,7 +4,7 @@ namespace Dynamic\EdgeCache\Extension;
 
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\RelationList;
 use SilverStripe\Security\Member;
@@ -20,7 +20,7 @@ use SilverStripe\Security\Member;
  *
  * @property Member|static $owner
  */
-class EdgeCacheMemberExtension extends DataExtension
+class EdgeCacheMemberExtension extends Extension
 {
     /**
      * Fields whose change alters how a member is shown on a page.

@@ -14,7 +14,8 @@ use SilverStripe\Security\Group;
 use SilverStripe\Security\Member;
 use SilverStripe\Security\Security;
 use SilverStripe\Versioned\Versioned;
-use SilverStripe\View\SSViewer;
+use SilverStripe\TemplateEngine\SSTemplateEngine;
+use SilverStripe\View\ViewLayerData;
 
 /**
  * A page that lists authors is tagged with the Member class, and a change to a name purges it.
@@ -229,7 +230,7 @@ class EdgeCacheMemberExtensionTest extends EdgeCacheTestCase
         $edge->startCollecting();
         $controller = PageController::create(Page::get()->byID($page->ID));
         $controller->setRequest(new HTTPRequest('GET', $page->URLSegment));
-        SSViewer::fromString($template)->process($controller, $extra);
+        SSTemplateEngine::create()->renderString($template, ViewLayerData::create($controller), $extra);
         $edge->stopCollecting();
 
         return $edge->getTags();

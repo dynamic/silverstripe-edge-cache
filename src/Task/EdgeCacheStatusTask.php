@@ -5,27 +5,43 @@ namespace Dynamic\EdgeCache\Task;
 use Dynamic\EdgeCache\EdgeCache;
 use SilverStripe\Core\Environment;
 use SilverStripe\Dev\BuildTask;
+use SilverStripe\PolyExecution\PolyOutput;
 use SilverStripe\SiteConfig\SiteConfig;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Throwable;
 
 /**
- * `sake dev/tasks/edge-cache-status`
+ * `sake tasks:edge-cache-status`
  *
- * Shows whether edge caching would run here and why not, and (with verify=1) proves the CDN
- * credentials work by purging a tag no page carries. Exits 1 when verify=1 fails. Run it before
+ * Shows whether edge caching would run here and why not, and (with --verify) proves the CDN
+ * credentials work by purging a tag no page carries. Exits 1 when --verify fails. Run it before
  * ticking the Settings box, and after changing credentials.
  */
 class EdgeCacheStatusTask extends BuildTask
 {
     use ReportsTaskResults;
 
-    private static $segment = 'edge-cache-status';
+    protected static string $commandName = 'edge-cache-status';
 
-    protected $title = 'Edge cache status';
+    protected string $title = 'Edge cache status';
 
-    protected $description = 'Shows whether edge caching runs here; verify=1 checks the CDN credentials.';
+    protected static string $description = 'Shows whether edge caching runs here; --verify checks the CDN credentials.';
 
-    public function run($request)
+    public function getOptions(): array
+    {
+        return [
+            new InputOption(
+                'verify',
+                null,
+                InputOption::VALUE_NONE,
+                'Purge a tag no page carries to prove the CDN credentials work'
+            ),
+        ];
+    }
+
+    protected function execute(InputInterface $input, PolyOutput $output): int
     {
         $edge = EdgeCache::singleton();
         $adapter = $edge->adapter();
@@ -40,18 +56,17 @@ class EdgeCacheStatusTask extends BuildTask
         ];
 
         $failed = false;
-        if ($request->getVar('verify')) {
+        if ($input->getOption('verify')) {
             $result = $adapter->verify();
             $failed = !$result['ok'];
             $lines[] = 'Verify:           ' . ($failed ? 'FAILED: ' : 'ok: ') . $result['message'];
         } else {
-            $lines[] = 'Verify:           not run (add verify=1 to purge a tag no page carries and prove the credentials)';
+            $lines[] = 'Verify:           not run (add --verify to purge a tag no page carries and prove the credentials)';
         }
 
-        $this->out(implode("\n", $lines));
-        if ($failed) {
-            $this->fail('The CDN credentials did not verify.');
-        }
+        $this->out($output, implode("\n", $lines));
+
+        return $failed ? $this->fail($output, 'The CDN credentials did not verify.') : Command::SUCCESS;
     }
 
     private function switchState(): string
