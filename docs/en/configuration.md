@@ -12,7 +12,7 @@ All keys are Silverstripe config on `Dynamic\EdgeCache\EdgeCache` unless noted.
 | `browser_max_age` | `60` | Seconds a browser keeps a page. Short, because browsers cannot be purged |
 | `max_tags` | `150` | Most cache tags on one page. A page over the limit is served from the origin as `private` and a warning is logged once an hour per URL |
 | `auto_tag_ignore` | `SiteTree`, `Page`, `DataObject` | Classes whose queries never become tags (exact match) |
-| `auto_tag_ignore_descendants` | elements, element areas, `SiteConfig`, `File`, `Group` | Classes, and every subclass, whose queries never become tags |
+| `auto_tag_ignore_descendants` | elements, element areas, `SiteConfig`, `File`, `Group` | Classes, and every subclass, whose queries never become tags; add the site's own page base class if navigation reads its fields (see [Extending](extending.md#a-page-base-class-that-navigation-reads)) |
 | `excluded_paths` | `admin`, `dev`, `Security` | URL prefixes that never get edge headers |
 
 `Dynamic\EdgeCache\Adapter\CloudflareAdapter`: `max_items_per_request` (100; 500 on Enterprise), `max_attempts` (3), `max_retry_wait` (15 seconds), `max_tag_header_bytes` (16000).

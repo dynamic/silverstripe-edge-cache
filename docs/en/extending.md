@@ -10,6 +10,18 @@ When the page itself is the record Silverstripe lazy-loads subclass fields for (
 
 Publishing a page purges its own tag, its ancestors' tags and the class tags of its class chain. Plain pages never purge each other.
 
+#### A page base class that navigation reads
+
+Silverstripe loads the fields a subclass adds (a menu icon, a summary) the first time a template reads one from a record that was hydrated through `SiteTree`. When every page of a site extends one base class (`App\Page\BasePage`) and the navigation reads one of its fields for each item, every page carries `ec-class-BasePage`, and publishing any page purges that class tag: the whole site, every time. The module's own `Page` and `SiteTree` are ignored for this reason; a site's own base class is not known to it. Add it:
+
+```yaml
+Dynamic\EdgeCache\EdgeCache:
+  auto_tag_ignore_descendants:
+    - App\Page\BasePage
+```
+
+The base class and every page class below it stop producing class tags from queries and lazy loads. Publishing a page then purges that page, its ancestors and the pages that list its children, and a change that moves it in the navigation still clears the site (see `structural_fields`). A page that lists records of a page subclass (an index of posts) can still declare the dependency with `private static $edge_cache_depends_on = [PostPage::class];`, which is not affected by the ignore list. Check a publish after adding it: the page and its parent should go `MISS`, and a page unrelated to it should stay `HIT`.
+
 ### Pages that list a page's children
 
 `$Children` and `$AllChildren` query `SiteTree`, which is ignored, so a page that shows "latest news" from a news holder is not tagged for those pages. Opt the holder's class in and every page that reads its children carries `ec-children-<holder id>`; publishing any child purges that tag:
