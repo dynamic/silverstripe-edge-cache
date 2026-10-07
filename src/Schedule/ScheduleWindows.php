@@ -18,7 +18,7 @@ use SilverStripe\ORM\FieldType\DBField;
  *
  * A class names its date fields in config:
  *
- *     Vendor\Notifications\Model\PopUp:
+ *     App\Model\Banner:
  *       edge_cache_schedule_fields:
  *         - StartTime
  *         - EndTime

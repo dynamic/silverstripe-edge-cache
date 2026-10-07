@@ -7,6 +7,7 @@ use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\Forms\CheckboxField;
 use SilverStripe\Forms\FieldList;
 use SilverStripe\ORM\DataExtension;
+use SilverStripe\ORM\RelationList;
 use SilverStripe\SiteConfig\SiteConfig;
 
 /**
@@ -15,6 +16,9 @@ use SilverStripe\SiteConfig\SiteConfig;
  *
  * Turning the switch off purges the site, so the edge drains at once instead of serving the last
  * cached copies until they expire.
+ *
+ * Settings can also hold lists (utility links, footer links) as many_many relations, which write only
+ * a join table. Changing the members or the order of any of them purges the site too.
  *
  * @property SiteConfig|static $owner
  * @property bool $EdgeCacheEnabled
@@ -56,5 +60,18 @@ class EdgeCacheSiteConfigExtension extends DataExtension
     public function onAfterWrite(): void
     {
         PurgeQueue::singleton()->addEverything();
+    }
+
+    /**
+     * Every many_many list Settings hands out clears the site when it changes. Registered under the
+     * name EdgeCacheOrderableRowsExtension looks up, so a reorder does too.
+     */
+    public function updateManyManyComponents(RelationList $list): void
+    {
+        $callback = static function (): void {
+            PurgeQueue::singleton()->addEverything();
+        };
+        $list->addCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
+        $list->removeCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
     }
 }
