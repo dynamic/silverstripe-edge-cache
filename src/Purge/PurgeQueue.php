@@ -84,12 +84,16 @@ class PurgeQueue
 
     /**
      * Send what is queued to the adapter and empty the queue. Safe to call more than once.
-     * Does nothing outside the enabled environments.
+     * Purge everything wins over tags; URLs are always sent. Does nothing outside the enabled
+     * environments.
+     *
+     * @return bool false when the CDN did not accept the purge (logged with what was lost); true when
+     *              it did, or when there was nothing to send
      */
-    public function flush(): void
+    public function flush(): bool
     {
         if ($this->isEmpty()) {
-            return;
+            return true;
         }
 
         $pending = $this->pending();
@@ -97,34 +101,36 @@ class PurgeQueue
 
         $edge = EdgeCache::singleton();
         if (!$edge->isEnvironmentEnabled()) {
-            return;
+            return true;
         }
 
         $failed = [];
         try {
             $adapter = $edge->adapter();
+            // Purging everything covers every tag; URLs still go out, since a file or a response this
+            // module never tagged does not carry the site tag.
             if ($pending['everything']) {
                 if (!$adapter->purgeEverything()) {
                     $failed[] = 'everything';
                 }
-            } else {
-                if ($pending['tags'] && !$adapter->purgeTags($pending['tags'])) {
-                    $failed[] = 'tags';
-                }
-                if ($pending['urls'] && !$adapter->purgeUrls($pending['urls'])) {
-                    $failed[] = 'urls';
-                }
+            } elseif ($pending['tags'] && !$adapter->purgeTags($pending['tags'])) {
+                $failed[] = 'tags';
+            }
+            if ($pending['urls'] && !$adapter->purgeUrls($pending['urls'])) {
+                $failed[] = 'urls';
             }
         } catch (Throwable $e) {
             // A failed purge must never break a publish.
             $this->logFailure($pending, ['exception' => $e::class . ': ' . $e->getMessage()]);
 
-            return;
+            return false;
         }
 
         if ($failed) {
             $this->logFailure($pending, ['failed' => $failed]);
         }
+
+        return !$failed;
     }
 
     /**

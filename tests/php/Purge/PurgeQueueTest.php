@@ -26,13 +26,14 @@ class PurgeQueueTest extends EdgeCacheTestCase
         $this->assertCount(51, $this->adapter->calls[0][1]);
     }
 
-    public function testEverythingWinsOverMoreSpecificPurges(): void
+    public function testEverythingWinsOverTagsButUrlsStillGoOut(): void
     {
         $queue = PurgeQueue::singleton();
         $queue->addTags('ec-page-1')->addUrls('https://example.com/a.pdf')->addEverything();
         $queue->flush();
 
-        $this->assertSame([['everything', []]], $this->adapter->calls);
+        // A file's URL does not carry the site tag, so purging everything would not clear it.
+        $this->assertSame([['everything', []], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
     }
 
     public function testTagsAndUrlsGoOutSeparately(): void
@@ -41,6 +42,33 @@ class PurgeQueueTest extends EdgeCacheTestCase
         PurgeQueue::singleton()->flush();
 
         $this->assertSame([['tags', ['ec-page-1']], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
+    }
+
+    public function testFlushSaysWhetherTheCdnAcceptedThePurge(): void
+    {
+        $queue = PurgeQueue::singleton();
+        $this->assertTrue($queue->flush(), 'nothing to send is not a failure');
+
+        $queue->addTags('ec-page-1');
+        $this->assertTrue($queue->flush());
+
+        $this->adapter->returnFalse = true;
+        $queue->addTags('ec-page-2');
+        $this->assertFalse($queue->flush());
+
+        $this->adapter->returnFalse = false;
+        $this->adapter->fail = true;
+        $queue->addEverything();
+        $this->assertFalse($queue->flush(), 'an exception is a failure too');
+    }
+
+    public function testFlushOutsideAnEnabledEnvironmentIsNotAFailure(): void
+    {
+        Environment::setEnv('SS_ENVIRONMENT_TYPE', 'dev');
+        $this->adapter->returnFalse = true;
+        PurgeQueue::singleton()->addTags('ec-page-1');
+
+        $this->assertTrue(PurgeQueue::singleton()->flush());
     }
 
     public function testFlushEmptiesTheQueue(): void

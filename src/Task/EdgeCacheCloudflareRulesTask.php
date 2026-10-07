@@ -30,6 +30,8 @@ use Throwable;
  */
 class EdgeCacheCloudflareRulesTask extends BuildTask
 {
+    use ReportsTaskResults;
+
     private static $segment = 'edge-cache-cloudflare-rules';
 
     protected $title = 'Cloudflare cache rules for edge caching';
@@ -108,42 +110,5 @@ class EdgeCacheCloudflareRulesTask extends BuildTask
         }
 
         return implode("\n", $lines);
-    }
-
-    private function out(string $text): void
-    {
-        echo Director::is_cli() ? $text . "\n" : '<pre>' . htmlspecialchars($text) . '</pre>';
-    }
-
-    /**
-     * Report a failure so a caller can tell: stderr and exit status 1 under sake, a 500 over HTTP.
-     */
-    private function fail(string $message): void
-    {
-        if (Director::is_cli()) {
-            $this->writeError($message . "\n");
-        } else {
-            http_response_code(500);
-            echo '<pre>' . htmlspecialchars($message) . '</pre>';
-        }
-        $this->terminate(1);
-    }
-
-    /**
-     * Writes to stderr. A test overrides it.
-     */
-    protected function writeError(string $text): void
-    {
-        fwrite(STDERR, $text);
-    }
-
-    /**
-     * Ends the process in CLI. A test overrides it.
-     */
-    protected function terminate(int $code): void
-    {
-        if (Director::is_cli()) {
-            exit($code);
-        }
     }
 }

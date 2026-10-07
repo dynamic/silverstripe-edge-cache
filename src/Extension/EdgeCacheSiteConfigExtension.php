@@ -31,10 +31,26 @@ class EdgeCacheSiteConfigExtension extends DataExtension
             'Root.Caching',
             CheckboxField::create('EdgeCacheEnabled', 'Serve pages from the CDN edge cache')
                 ->setDescription(
-                    'Only takes effect in the environments the module is enabled for (live by default). '
-                    . 'Untick to stop edge caching and clear the cached pages.'
+                    'Untick to stop edge caching and clear the cached pages. ' . $this->unavailableReason()
                 )
         );
+    }
+
+    /**
+     * Why ticking the box would not start edge caching on this site right now, or an empty string.
+     */
+    protected function unavailableReason(): string
+    {
+        $edge = EdgeCache::singleton();
+        if (!$edge->isEnvironmentEnabled()) {
+            return 'NOT ACTIVE: this environment is not one edge caching runs in ('
+                . implode(', ', (array) EdgeCache::config()->get('enabled_environments')) . ').';
+        }
+        if (!$edge->adapter()->isConfigured()) {
+            return 'NOT ACTIVE: the CDN credentials are not set, so pages are not cached and nothing is purged.';
+        }
+
+        return '';
     }
 
     public function onAfterWrite(): void

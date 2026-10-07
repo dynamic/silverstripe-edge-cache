@@ -4,8 +4,12 @@ namespace Dynamic\EdgeCache\Extension;
 
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
+use Psr\Log\LoggerInterface;
+use SilverStripe\CMS\Model\SiteTree;
+use SilverStripe\Core\Injector\Injector;
 use SilverStripe\ORM\DataExtension;
 use SilverStripe\Versioned\Versioned;
+use Throwable;
 
 /**
  * Purges the page an element sits on when the element is published or unpublished.
@@ -64,15 +68,65 @@ class EdgeCacheElementExtension extends DataExtension
 
     protected function purgeOwnerPage(): void
     {
-        $owner = $this->owner;
-        $page = $owner->getPage();
-        if ($page && $page->exists()) {
-            PurgeQueue::singleton()->addTags(EdgeCache::pageTag($page->ID));
+        $queue = PurgeQueue::singleton();
+
+        try {
+            $pages = $this->owner->hasMethod('getPage') ? [$this->owner->getPage()] : [null];
+            $virtual = $this->virtualPages();
+        } catch (Throwable $e) {
+            // Looking up where an element is shown must never break the editor's publish. If it
+            // cannot be answered, clear the site rather than leave a page showing the old element.
+            $queue->addEverything();
+            $this->logLookupFailure($e);
 
             return;
         }
 
-        // No page found (orphaned, or inside another element's area): clear the site rather than guess.
-        PurgeQueue::singleton()->addEverything();
+        foreach (array_merge($pages, $virtual) as $page) {
+            // No page (an orphaned area), or an owner that is not a page (an element inside another
+            // element's area): which pages show this element is unknown, so clear the site.
+            if (!$page instanceof SiteTree || !$page->exists()) {
+                $queue->addEverything();
+
+                return;
+            }
+            $queue->addTags(EdgeCache::pageTag($page->ID));
+        }
+    }
+
+    /**
+     * Pages holding a published virtual copy of this element (dnadesign/silverstripe-elemental-virtual,
+     * which renders the linked element's content but is not republished with it). An entry that is
+     * not a page means a copy whose page could not be found.
+     *
+     * @return array<int, mixed>
+     */
+    protected function virtualPages(): array
+    {
+        if (!$this->owner->hasMethod('getPublishedVirtualElements')) {
+            return [];
+        }
+
+        $pages = [];
+        // Provided by elemental-virtual's own extension, which this module does not depend on.
+        /** @var iterable<object> $virtuals */
+        $virtuals = $this->owner->getPublishedVirtualElements(); // @phpstan-ignore method.notFound
+        foreach ($virtuals as $virtual) {
+            $pages[] = $virtual->getPage();
+        }
+
+        return $pages;
+    }
+
+    protected function logLookupFailure(Throwable $e): void
+    {
+        try {
+            Injector::inst()->get(LoggerInterface::class)->warning(
+                'Edge cache could not find the pages showing an element, so the whole site was purged: '
+                . $e::class . ': ' . $e->getMessage()
+            );
+        } catch (Throwable) {
+            // Nowhere left to report to.
+        }
     }
 }

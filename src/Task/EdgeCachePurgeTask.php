@@ -4,7 +4,6 @@ namespace Dynamic\EdgeCache\Task;
 
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
-use SilverStripe\Control\Director;
 use SilverStripe\Dev\BuildTask;
 
 /**
@@ -14,10 +13,14 @@ use SilverStripe\Dev\BuildTask;
  *   tag=ec-page-12,...  purge by cache tag
  *   url=https://...     purge one or more absolute URLs (comma separated)
  *
- * Only runs in the environments the module is enabled for.
+ * Only runs in the environments the module is enabled for. Exits 1 when the CDN did not accept the
+ * purge, so a deploy script can tell. Run `everything=1` after a deploy that changes templates, the
+ * theme or anything else that changes the HTML of pages nobody edited.
  */
 class EdgeCachePurgeTask extends BuildTask
 {
+    use ReportsTaskResults;
+
     private static $segment = 'edge-cache-purge';
 
     protected $title = 'Purge the CDN edge cache';
@@ -29,6 +32,7 @@ class EdgeCachePurgeTask extends BuildTask
         $edge = EdgeCache::singleton();
         if (!$edge->isEnvironmentEnabled()) {
             $this->out('Edge cache is not enabled for this environment; nothing purged.');
+
             return;
         }
 
@@ -49,11 +53,18 @@ class EdgeCachePurgeTask extends BuildTask
 
         if (!$what) {
             $this->out('Nothing to purge. Pass everything=1, tag=a,b or url=https://...');
+
             return;
         }
 
-        $queue->flush();
-        $this->out('Purge sent: ' . implode('; ', $what));
+        if (!$queue->flush()) {
+            $this->fail('The CDN did not accept the purge: ' . implode('; ', $what) . '. Run edge-cache-status verify=1 '
+                . 'to check the credentials; the error log has the detail.');
+
+            return;
+        }
+
+        $this->out('Purge accepted: ' . implode('; ', $what));
     }
 
     /**
@@ -62,10 +73,5 @@ class EdgeCachePurgeTask extends BuildTask
     private function list($value): array
     {
         return array_values(array_filter(array_map('trim', explode(',', (string) $value))));
-    }
-
-    private function out(string $text): void
-    {
-        echo Director::is_cli() ? $text . "\n" : '<pre>' . htmlspecialchars($text) . '</pre>';
     }
 }

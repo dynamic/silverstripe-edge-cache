@@ -33,7 +33,7 @@ class CloudflareAdapterTest extends SapphireTest
         parent::tearDown();
     }
 
-    private function adapter(Response ...$responses): CloudflareAdapter
+    private function adapter(mixed ...$responses): CloudflareAdapter
     {
         $stack = HandlerStack::create(new MockHandler($responses));
         $stack->push(Middleware::history($this->history));
@@ -135,5 +135,48 @@ class CloudflareAdapterTest extends SapphireTest
         $value = (new CloudflareAdapter())->formatTags(['aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc']);
 
         $this->assertSame('aaaaaaaaaa', $value);
+    }
+
+    public function testVerifyPurgesATagNoPageCarries(): void
+    {
+        $adapter = $this->adapter(new Response(200, [], '{"success":true}'));
+
+        $result = $adapter->verify();
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(['tags' => ['ec-status-check']], $this->body(0));
+    }
+
+    public function testVerifyReportsTheReasonWhenCloudflareRefuses(): void
+    {
+        $adapter = $this->adapter(new Response(403, [], '{"success":false,"errors":[{"message":"no permission"}]}'));
+
+        $result = $adapter->verify();
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('Cloudflare answered 403', $result['message']);
+        $this->assertStringContainsString('no permission', $result['message']);
+    }
+
+    public function testVerifyWithoutCredentialsSaysWhichAreMissing(): void
+    {
+        Environment::setEnv('EDGECACHE_CLOUDFLARE_ZONE_ID', '');
+
+        $result = $this->adapter()->verify();
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('EDGECACHE_CLOUDFLARE_ZONE_ID', $result['message']);
+        $this->assertCount(0, $this->history);
+    }
+
+    public function testACloudflareThatCannotBeReachedIsAFailureNotAnException(): void
+    {
+        $timeout = new \GuzzleHttp\Exception\ConnectException('timed out', new \GuzzleHttp\Psr7\Request('POST', 'x'));
+        $adapter = $this->adapter($timeout);
+
+        $result = $adapter->verify();
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('could not be reached', $result['message']);
     }
 }
