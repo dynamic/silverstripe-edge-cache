@@ -29,12 +29,12 @@ class CacheRuleset
 
     /**
      * Edge lifetime for `/_resources/`. These URLs carry a `?m=` cache-buster for CSS and JS, but
-     * images do not, so keep it well under a year.
+     * images do not, so keep it short and purge the prefix after a deploy that changes them.
      *
      * @config
      * @var int
      */
-    private static $static_edge_ttl = 604800;
+    private static $static_edge_ttl = 86400;
 
     /**
      * @config
@@ -122,16 +122,38 @@ class CacheRuleset
      */
     public function merge(array $existing, string $host): array
     {
+        return array_merge($this->removeOwned($existing), $this->rules($host));
+    }
+
+    /**
+     * The zone's existing rules without this module's, for the rollback path.
+     *
+     * @param array<int, array<string, mixed>> $existing rules as the API returned them
+     * @return array<int, array<string, mixed>>
+     */
+    public function removeOwned(array $existing): array
+    {
         $kept = [];
         foreach ($existing as $rule) {
             if (!$this->owns($rule)) {
-                $kept[] = array_intersect_key($rule, array_flip([
-                    'id', 'ref', 'expression', 'action', 'action_parameters', 'description', 'enabled',
-                ]));
+                $kept[] = $this->writable($rule);
             }
         }
 
-        return array_merge($kept, $this->rules($host));
+        return $kept;
+    }
+
+    /**
+     * A rule as the API accepts it back: read-only fields (version, last_updated) dropped.
+     *
+     * @param array<string, mixed> $rule
+     * @return array<string, mixed>
+     */
+    protected function writable(array $rule): array
+    {
+        return array_intersect_key($rule, array_flip([
+            'id', 'ref', 'expression', 'action', 'action_parameters', 'description', 'enabled',
+        ]));
     }
 
     /**

@@ -72,5 +72,5 @@ Implement `Dynamic\EdgeCache\Adapter\EdgeCacheAdapter` and register it through I
 | `isConfigured()` | Credentials present. False keeps the site on its normal headers |
 | `edgeHeaders(EdgePolicy)` | The header(s) your edge reads for lifetime (Fastly: `Surrogate-Control`) |
 | `tagHeaderName()`, `formatTags()` | Where tags go and how they are joined (Fastly: `Surrogate-Key`, space separated) |
-| `allowedVary()` | `Vary` values the edge tolerates while still caching, or null. Declared for adapters whose edge refuses to cache a response with any other `Vary` (Imperva allows only `Accept-Encoding`); the module does not yet strip `Vary` itself, so such an adapter needs that handling added |
+| `allowedVary()` | `Vary` values the edge tolerates while still caching, or null for no restriction. When it returns a list (Imperva allows only `Accept-Encoding`), the middleware removes every other `Vary` value from responses it hands to the edge. That is safe here because the other representation of a URL, Markdown, is `no-store` |
 | `purgeTags()`, `purgeUrls()`, `purgeEverything()` | Purge calls. Return false on failure; never throw |

@@ -120,6 +120,38 @@ class EdgeCacheMiddleware implements HTTPMiddleware
         if ($tagHeader) {
             $response->addHeader($tagHeader, $adapter->formatTags($edge->getTags()));
         }
+
+        if (($allowed = $adapter->allowedVary()) !== null) {
+            $this->restrictVary($response, $allowed);
+        }
+    }
+
+    /**
+     * Keep only the `Vary` values the edge tolerates. An edge that will not cache a response whose
+     * `Vary` names anything beyond `Accept-Encoding` (Imperva) needs the rest removed. That is safe
+     * for what this module sends: the other representation of a URL (Markdown) is `no-store`, so it
+     * never shares a cache entry with the HTML.
+     *
+     * @param string[] $allowed
+     */
+    protected function restrictVary(HTTPResponse $response, array $allowed): void
+    {
+        $vary = (string) $response->getHeader('Vary');
+        if ($vary === '') {
+            return;
+        }
+
+        $allowed = array_map('strtolower', $allowed);
+        $kept = array_filter(
+            array_map('trim', explode(',', $vary)),
+            fn ($value) => $value !== '' && in_array(strtolower($value), $allowed, true)
+        );
+
+        if ($kept) {
+            $response->addHeader('Vary', implode(', ', $kept));
+        } else {
+            $response->removeHeader('Vary');
+        }
     }
 
     /**

@@ -77,4 +77,30 @@ class CacheRulesetTest extends SapphireTest
 
         $this->assertStringContainsString('ex\\"ample.com', $rules[0]['expression']);
     }
+
+    public function testRemoveOwnedKeepsEveryOtherRule(): void
+    {
+        $ruleset = new CacheRuleset();
+        $foreign = [
+            'id' => 'abc',
+            'ref' => 'someone-elses',
+            'expression' => 'true',
+            'action' => 'set_cache_settings',
+            'action_parameters' => ['cache' => false],
+            'version' => '3',
+        ];
+
+        $kept = $ruleset->removeOwned($ruleset->merge([$foreign], 'example.com'));
+
+        $this->assertCount(1, $kept);
+        $this->assertSame('someone-elses', $kept[0]['ref']);
+        $this->assertArrayNotHasKey('version', $kept[0]);
+    }
+
+    public function testStaticFilesAreCachedForADayAtTheEdge(): void
+    {
+        $static = (new CacheRuleset())->rules('example.com')[1];
+
+        $this->assertSame(86400, $static['action_parameters']['edge_ttl']['default']);
+    }
 }

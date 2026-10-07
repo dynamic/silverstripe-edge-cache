@@ -10,22 +10,49 @@ Cloudflare does not cache HTML unless a Cache Rule makes it eligible. The module
 
 The edge lifetime goes in its own header because Silverstripe's public cache state always carries `must-revalidate`, which switches `stale-while-revalidate` off in Cloudflare.
 
+## Tokens
+
+Use two, so the token on the server can do nothing but purge:
+
+| Token | Lives | Permissions (this zone only) |
+|---|---|---|
+| Runtime | the server's `.env` (`EDGECACHE_CLOUDFLARE_API_TOKEN`) | Zone > Cache Purge > Purge |
+| Provisioning | your machine, for one run of the rules task | Zone > Cache Settings > Edit (Cache Rules), plus Zone Settings > Edit if you also change Tiered Cache. Delete it afterwards |
+
+Also set `EDGECACHE_CLOUDFLARE_ZONE_ID`. The Global API Key should not be used by the application.
+
 ## Cache Rules
 
 ```
-ddev sake dev/tasks/edge-cache-cloudflare-rules            # preview
-ddev sake dev/tasks/edge-cache-cloudflare-rules apply=1    # write
+sake dev/tasks/edge-cache-cloudflare-rules                  # print the ruleset, write nothing
+sake dev/tasks/edge-cache-cloudflare-rules validate=1       # Cloudflare checks it (dry run), writes nothing
+sake dev/tasks/edge-cache-cloudflare-rules apply=1          # dry run, then write
+sake dev/tasks/edge-cache-cloudflare-rules remove=1         # rollback: remove this module's rules only
 ```
 
 The task reads the zone's existing cache rules, keeps them, and adds five of its own after them (a rule that comes later wins when settings conflict):
 
 1. Pages: eligible for cache, lifetime from the origin header, bypass when the origin sends none.
-2. `/_resources/`: cached for `static_edge_ttl`.
+2. `/_resources/`: cached for `static_edge_ttl` (1 day). Purge the prefix after a deploy that changes theme images, which carry no `?m=` cache-buster.
 3. Bypass for a `PHPSESSID` or `SECSESSID` cookie.
 4. Bypass when the request's `Accept` header asks for `text/markdown` (the edge keys on the URL alone and ignores `Vary: Accept`).
 5. Bypass for verified bots, so the origin sees them.
 
-Running it again changes nothing.
+Running it again changes nothing, and `remove=1` takes back only the rules whose ref starts with `dynamic-edge-cache-`.
+
+`validate=1` and `apply=1` use Cloudflare's rulesets dry run (`?dry_run=true`), which runs the same syntax, field, phase and plan checks as a real write. Pass `novalidate=1` with `apply=1` only if the dry run is refused for your zone.
+
+## Page Rules already on the zone
+
+A zone often already has a Page Rule such as `*example.com/*` with Cache Everything and Origin Cache Control. Cache Rules take precedence over Page Rules where both match, so the two can coexist. Until the origin sends public headers nothing changes, because Origin Cache Control respects the `private` the site sends today. Leave the Page Rules in place through the rollout and remove them as a separate step once the Cache Rules are proven. Cache Everything also caches `/assets/` for the zone's default edge lifetime, which the module's rules do not touch.
+
+## Rolling out
+
+1. Deploy the module with the Settings box unticked. Headers are unchanged.
+2. `validate=1`, review the printed rules, then `apply=1`.
+3. Optionally enable Smart Tiered Cache (it needs Zone Settings > Edit): `PATCH /zones/{zone}/cache/tiered_cache_smart_topology_enable` with `{"value":"on"}`. On a low-traffic site it collapses per-location misses into one origin fetch.
+4. Tick **Serve pages from the CDN edge cache** in Settings > Caching (the save clears the cached pages). Run the checks below.
+5. To roll back, untick the box (clears the cache and restores the old headers) or run `remove=1`.
 
 ## Checks
 
@@ -35,6 +62,8 @@ curl -sI --resolve www.example.com:443:ORIGIN_IP https://www.example.com/ | grep
 curl -sI -H 'Cookie: PHPSESSID=x' https://www.example.com/ | grep -i cf-cache-status   # BYPASS or DYNAMIC
 curl -s  -H 'Accept: text/markdown' https://www.example.com/ | head -3                 # Markdown, even after a HIT
 ```
+
+The first MISS then HIT also confirms Cloudflare honours `Cloudflare-CDN-Cache-Control` under the rule's `bypass_by_default` lifetime. If it stays `BYPASS` or `DYNAMIC`, check that the Cache Rules were applied and that the page returned `Cache-Tag` from the origin.
 
 Pages with a form that carries a CSRF token are `no-store` and never cached. Check coverage by requesting each sitemap URL and counting `cf-cache-status: HIT`.
 

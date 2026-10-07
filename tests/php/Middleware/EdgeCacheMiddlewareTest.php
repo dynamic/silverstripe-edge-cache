@@ -142,4 +142,38 @@ class EdgeCacheMiddlewareTest extends EdgeCacheTestCase
 
         $this->assertSame(['ec-site', 'hasspace', 'ab', 'ok-1'], $edge->getTags());
     }
+
+    public function testVaryIsLeftAloneWhenTheEdgeHasNoRestriction(): void
+    {
+        $response = $this->respond(headers: ['Vary' => 'X-Forwarded-Protocol, Accept']);
+
+        $this->assertSame('X-Forwarded-Protocol, Accept', $response->getHeader('Vary'));
+    }
+
+    public function testVaryIsRestrictedToWhatTheEdgeAllows(): void
+    {
+        $this->adapter->allowedVary = ['Accept-Encoding'];
+
+        $response = $this->respond(headers: ['Vary' => 'X-Forwarded-Protocol, Accept, accept-encoding']);
+
+        $this->assertSame('accept-encoding', $response->getHeader('Vary'));
+    }
+
+    public function testVaryIsRemovedWhenNothingAllowedIsLeft(): void
+    {
+        $this->adapter->allowedVary = ['Accept-Encoding'];
+
+        $response = $this->respond(headers: ['Vary' => 'X-Forwarded-Protocol, Accept']);
+
+        $this->assertNull($response->getHeader('Vary'));
+    }
+
+    public function testVaryOnAResponseThatIsNotCachedIsNotTouched(): void
+    {
+        $this->adapter->allowedVary = ['Accept-Encoding'];
+
+        $response = $this->respond('private, must-revalidate', headers: ['Vary' => 'X-Forwarded-Protocol, Accept']);
+
+        $this->assertSame('X-Forwarded-Protocol, Accept', $response->getHeader('Vary'));
+    }
 }

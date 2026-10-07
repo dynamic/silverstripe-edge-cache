@@ -56,19 +56,67 @@ class RulesProvisioner
     }
 
     /**
-     * @return array<int, array<string, mixed>> the ruleset as written
+     * Ask Cloudflare to check the ruleset that would be written, without writing it. A rulesets API
+     * dry run runs the same syntax, field, phase and plan checks as a real write.
+     *
+     * @return array<int, array<string, mixed>> the ruleset that was checked
+     * @throws RuntimeException when Cloudflare rejects it
      */
-    public function apply(string $host): array
+    public function validate(string $host): array
     {
         $rules = $this->plan($host);
+        $this->put($rules, true);
+
+        return $rules;
+    }
+
+    /**
+     * @param bool $validate check with a dry run first, so a rejected rule never reaches the zone
+     * @return array<int, array<string, mixed>> the ruleset as written
+     */
+    public function apply(string $host, bool $validate = true): array
+    {
+        $rules = $this->plan($host);
+        if ($validate) {
+            $this->put($rules, true);
+        }
+        $this->put($rules, false);
+
+        return $rules;
+    }
+
+    /**
+     * Remove this module's rules and leave every other rule in place.
+     *
+     * @return int how many rules were removed (0 writes nothing)
+     */
+    public function remove(): int
+    {
+        $existing = $this->current();
+        $kept = CacheRuleset::singleton()->removeOwned($existing);
+        $removed = count($existing) - count($kept);
+        if ($removed > 0) {
+            $this->put($kept, false);
+        }
+
+        return $removed;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rules
+     */
+    protected function put(array $rules, bool $dryRun): void
+    {
         $response = $this->client()->request(
             'PUT',
             $this->uri(),
-            $this->options(['json' => ['rules' => $rules], 'http_errors' => false])
+            $this->options([
+                'json' => ['rules' => $rules],
+                'query' => $dryRun ? ['dry_run' => 'true'] : [],
+                'http_errors' => false,
+            ])
         );
         $this->decode($response);
-
-        return $rules;
     }
 
     /**
