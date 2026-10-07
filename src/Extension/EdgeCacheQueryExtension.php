@@ -8,6 +8,7 @@ use SilverStripe\ORM\DataExtension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\DataQuery;
 use SilverStripe\ORM\Queries\SQLSelect;
+use SilverStripe\ORM\RelationList;
 
 /**
  * Tags a page with every class it queries while rendering, so a page that lists blog posts, staff
@@ -20,6 +21,10 @@ use SilverStripe\ORM\Queries\SQLSelect;
  * record is the page being rendered it says nothing about what the page lists, so it is not a tag
  * (every blog post would otherwise be tied to every other blog post). When it is some other record,
  * such as a listed post whose summary the template reads, it is.
+ *
+ * It also hooks many_many lists for EdgeCachePurgeable: a join write fires no record event, so the
+ * list's add/remove callbacks purge instead. Applied here because the list can be edited from either
+ * side of the relation, and the class that opted in may be the other one.
  */
 class EdgeCacheQueryExtension extends DataExtension
 {
@@ -37,6 +42,32 @@ class EdgeCacheQueryExtension extends DataExtension
 
         CollectionState::markLazy($dataQuery);
         $edge->collectLazyClass($dataQuery->dataClass(), (int) $dataObject->ID);
+    }
+
+    /**
+     * Purge when the members of a many_many list (plain or through) change, for whichever of the
+     * record handing out the list and the class it lists uses EdgeCachePurgeable. The other side is
+     * the class as declared on the relation, so a subclass tag is not purged from there.
+     */
+    public function updateManyManyComponents(RelationList $list): void
+    {
+        $classes = [];
+        foreach ([get_class($this->owner), $list->dataClass()] as $class) {
+            if (singleton($class)->hasExtension(EdgeCachePurgeable::class)) {
+                $classes[$class] = $class;
+            }
+        }
+        if (!$classes) {
+            return;
+        }
+
+        $callback = function () use ($classes): void {
+            foreach ($classes as $class) {
+                EdgeCachePurgeable::purgeClass($class);
+            }
+        };
+        $list->addCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
+        $list->removeCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
     }
 
     public function augmentSQL(SQLSelect $query, ?DataQuery $dataQuery = null): void

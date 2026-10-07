@@ -4,7 +4,9 @@ namespace Dynamic\EdgeCache\Extension;
 
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
+use SilverStripe\Core\Config\Config;
 use SilverStripe\ORM\DataExtension;
+use SilverStripe\ORM\DataObject;
 use SilverStripe\Versioned\Versioned;
 
 /**
@@ -22,10 +24,21 @@ use SilverStripe\Versioned\Versioned;
  * links). A list of class names adds those class tags too. A record that is Versioned purges on
  * publish; one that is not purges on write.
  *
- * @property \SilverStripe\ORM\DataObject|static $owner
+ * Adding, removing, clearing or reordering the records of a many_many relation it belongs to purges
+ * too, from either side of the relation, since those write only a join table and fire no record
+ * event (the links in a navigation group). The join table is not versioned, so the purge is
+ * immediate whatever stage the owner is on.
+ *
+ * @property DataObject|static $owner
  */
 class EdgeCachePurgeable extends DataExtension
 {
+    /**
+     * Name the purge callback is registered under on a relation list (by EdgeCacheQueryExtension).
+     * The reorder extension looks it up by this name.
+     */
+    public const RELATION_CALLBACK = 'edge-cache-purge';
+
     public function onAfterWrite(): void
     {
         if (!$this->owner->hasExtension(Versioned::class)) {
@@ -64,7 +77,16 @@ class EdgeCachePurgeable extends DataExtension
 
     protected function purge(): void
     {
-        $setting = $this->owner->config()->get('edge_cache_purge');
+        static::purgeClass(get_class($this->owner));
+    }
+
+    /**
+     * Queue the purge a record of this class needs: the whole site, or the class tag chain plus any
+     * listed classes. Also used for a relation change, which has the class but no record event.
+     */
+    public static function purgeClass(string $class): void
+    {
+        $setting = Config::inst()->get($class, 'edge_cache_purge');
         $queue = PurgeQueue::singleton();
 
         if ($setting === 'everything') {
@@ -74,7 +96,7 @@ class EdgeCachePurgeable extends DataExtension
         }
 
         // Pages that listed records of this class carry its class tag, so purge that.
-        $tags = EdgeCache::classChainTags(get_class($this->owner));
+        $tags = EdgeCache::classChainTags($class);
         foreach ((array) $setting as $class) {
             $tags[] = EdgeCache::classTag($class);
         }
