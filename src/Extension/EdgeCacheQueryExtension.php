@@ -5,7 +5,7 @@ namespace Dynamic\EdgeCache\Extension;
 use Dynamic\EdgeCache\CollectionState;
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\DataQuery;
 use SilverStripe\ORM\Queries\SQLSelect;
@@ -29,7 +29,7 @@ use SilverStripe\SiteConfig\SiteConfig;
  * list's add/remove callbacks purge instead. Applied here because the list can be edited from either
  * side of the relation, and the class that opted in may be the other one.
  */
-class EdgeCacheQueryExtension extends DataExtension
+class EdgeCacheQueryExtension extends Extension
 {
     public function augmentLoadLazyFields(SQLSelect $query, DataQuery $dataQuery, DataObject $dataObject): void
     {

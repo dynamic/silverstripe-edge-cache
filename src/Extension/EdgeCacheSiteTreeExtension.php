@@ -6,7 +6,7 @@ use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\CMS\Model\SiteTree;
 use SilverStripe\Core\Config\Config;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\FieldType\DBBoolean;
 use SilverStripe\Versioned\Versioned;
@@ -22,7 +22,7 @@ use SilverStripe\Versioned\Versioned;
  *
  * @property SiteTree|static $owner
  */
-class EdgeCacheSiteTreeExtension extends DataExtension
+class EdgeCacheSiteTreeExtension extends Extension
 {
     /**
      * Tag a page that lists this page's children (`$Children`, `$AllChildren`) with

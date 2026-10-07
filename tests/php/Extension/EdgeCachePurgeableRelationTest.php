@@ -12,7 +12,7 @@ use Dynamic\EdgeCache\Tests\Fixtures\PlainJoinOwner;
 use Dynamic\EdgeCache\Tests\Fixtures\ThroughJoin;
 use Dynamic\EdgeCache\Tests\Fixtures\ThroughOwner;
 use ReflectionMethod;
-use SilverStripe\ORM\ArrayList;
+use SilverStripe\Model\List\ArrayList;
 use Symbiote\GridFieldExtensions\GridFieldOrderableRows;
 
 /**

@@ -24,13 +24,13 @@ Also set `EDGECACHE_CLOUDFLARE_ZONE_ID`. The task reads the same variable name f
 ## Cache Rules
 
 ```
-sake dev/tasks/edge-cache-cloudflare-rules                                    # print the ruleset, write nothing
-sake dev/tasks/edge-cache-cloudflare-rules validate=1 host=www.example.com   # Cloudflare checks it (dry run), writes nothing
-sake dev/tasks/edge-cache-cloudflare-rules apply=1 host=www.example.com      # dry run, then write
-sake dev/tasks/edge-cache-cloudflare-rules remove=1                          # rollback: remove this module's rules only
+sake tasks:edge-cache-cloudflare-rules                                    # print the ruleset, write nothing
+sake tasks:edge-cache-cloudflare-rules --validate --host=www.example.com  # Cloudflare checks it (dry run), writes nothing
+sake tasks:edge-cache-cloudflare-rules --apply --host=www.example.com     # dry run, then write
+sake tasks:edge-cache-cloudflare-rules --remove                                                  # rollback: remove this module's rules only
 ```
 
-`validate=1` and `apply=1` refuse to run without `host=`. A local or staging site's base URL is not the host the zone serves, and rules written for it would match no real traffic. Each host keeps its own rules (the host is part of each rule's ref), so apex and www can both be provisioned in one zone; `remove=1` takes back every host's rules, or only one host's with `host=`.
+`--validate` and `--apply` refuse to run without `--host`. A local or staging site's base URL is not the host the zone serves, and rules written for it would match no real traffic. Each host keeps its own rules (the host is part of each rule's ref), so apex and www can both be provisioned in one zone; `--remove` takes back every host's rules, or only one host's with `--host`.
 
 A failure prints to stderr and exits 1, so a script running the task can tell. The task reads the zone's rules and then replaces the whole ruleset in one write, so run it from one place at a time: a rule saved in the dashboard between the read and the write would be overwritten. If a write ends in a timeout the task says so, because it may have been applied; run it with no arguments to see the rules the zone holds.
 
@@ -42,9 +42,9 @@ The task reads the zone's existing cache rules, keeps them, and adds up to five 
 4. Bypass when the request's `Accept` header asks for `text/markdown` (the edge keys on the URL alone and ignores `Vary: Accept`).
 5. Bypass for AI crawlers, matched case-insensitively by user agent (`CacheRuleset.bot_user_agents`), so the origin sees them and the aeo crawler log stays complete. Cache Rules reject `cf.client.bot` on the Free plan, so verified-bot matching is not available there; a spoofed user agent only gets an uncached page. YAML adds to the default list (an empty list changes nothing); set `bot_user_agents: null` to leave the rule out, or replace the list from PHP with `Config::modify()->set(CacheRuleset::class, 'bot_user_agents', [...])`. Googlebot and Bingbot are not in the list, so they are served from the cache and do not reach the aeo crawler log.
 
-Running it again for the same host changes nothing, and `remove=1` takes back only rules whose ref starts with `dynamic-edge-cache-`.
+Running it again for the same host changes nothing, and `--remove` takes back only rules whose ref starts with `dynamic-edge-cache-`.
 
-`validate=1` and `apply=1` use Cloudflare's rulesets dry run (`?dry_run=true`), which runs the same syntax, field, phase and plan checks as a real write. Pass `novalidate=1` with `apply=1` only if the dry run is refused for your zone.
+`--validate` and `--apply` use Cloudflare's rulesets dry run (`?dry_run=true`), which runs the same syntax, field, phase and plan checks as a real write. Pass `--no-validate` with `--apply` only if the dry run is refused for your zone.
 
 ## Page Rules already on the zone
 
@@ -53,10 +53,10 @@ A zone often already has a Page Rule such as `*example.com/*` with Cache Everyth
 ## Rolling out
 
 1. Deploy the module with the Settings box unticked. Page headers are unchanged.
-2. `validate=1`, review the printed rules, then `apply=1`.
+2. `--validate`, review the printed rules, then `--apply`.
 3. Optionally enable Smart Tiered Cache (it needs Zone Settings > Edit): `PATCH /zones/{zone}/cache/tiered_cache_smart_topology_enable` with `{"value":"on"}`. On a low-traffic site it collapses per-location misses into one origin fetch.
 4. Tick **Serve pages from the CDN edge cache** in Settings > Caching (the save clears the cached pages). Run the checks below.
-5. To roll back, untick the box (clears the cache and restores the old headers) or run `remove=1`.
+5. To roll back, untick the box (clears the cache and restores the old headers) or run `--remove`.
 
 ## Checks
 

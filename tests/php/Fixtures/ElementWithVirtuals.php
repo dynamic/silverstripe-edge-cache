@@ -4,7 +4,7 @@ namespace Dynamic\EdgeCache\Tests\Fixtures;
 
 use DNADesign\Elemental\Models\BaseElement;
 use SilverStripe\Dev\TestOnly;
-use SilverStripe\ORM\ArrayList;
+use SilverStripe\Model\List\ArrayList;
 
 /**
  * An element that answers the way an element with dnadesign/silverstripe-elemental-virtual does:

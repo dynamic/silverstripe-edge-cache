@@ -7,7 +7,7 @@ use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Psr\Log\LoggerInterface;
 use SilverStripe\CMS\Model\SiteTree;
 use SilverStripe\Core\Injector\Injector;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripe\Versioned\Versioned;
 use Throwable;
 
@@ -26,7 +26,7 @@ use Throwable;
  *
  * @property \DNADesign\Elemental\Models\BaseElement|static $owner
  */
-class EdgeCacheElementExtension extends DataExtension
+class EdgeCacheElementExtension extends Extension
 {
     public function onAfterPublish(&$original): void
     {

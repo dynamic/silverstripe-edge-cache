@@ -1,13 +1,13 @@
 {
     "name": "dynamic/silverstripe-edge-cache-dev",
-    "description": "Local dev harness: an SS5 project that installs the module via a path repository",
+    "description": "Local dev harness: an SS6 project that installs the module via a path repository",
     "type": "project",
     "require": {
-        "php": "^8.1",
-        "silverstripe/recipe-cms": "^5.3",
+        "php": "^8.3",
+        "silverstripe/recipe-cms": "^6",
         "dynamic/silverstripe-edge-cache": "@dev",
-        "silverstripe/recipe-testing": "^3",
-        "dnadesign/silverstripe-elemental": "^5.3",
+        "silverstripe/recipe-testing": "^4",
+        "dnadesign/silverstripe-elemental": "^6",
         "squizlabs/php_codesniffer": "^3",
         "phpstan/phpstan": "^1.10 || ^2",
         "cambis/silverstan": "^2.2",

@@ -3,21 +3,17 @@
 namespace Dynamic\EdgeCache\Tests\Task;
 
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
-use Dynamic\EdgeCache\Tests\Fixtures\TestablePurgeTask;
-use SilverStripe\Control\HTTPRequest;
+use Dynamic\EdgeCache\Task\EdgeCachePurgeTask;
+use Dynamic\EdgeCache\Tests\Fixtures\RunsTasks;
 use SilverStripe\Core\Environment;
 
 class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
 {
-    private TestablePurgeTask $task;
+    use RunsTasks;
 
-    private function runTask(array $vars): string
+    private function runTask(array $options): string
     {
-        $this->task = new TestablePurgeTask();
-        ob_start();
-        $this->task->run(new HTTPRequest('GET', '', $vars));
-
-        return (string) ob_get_clean();
+        return $this->runBuildTask(new EdgeCachePurgeTask(), $options);
     }
 
     public function testAnAcceptedPurgeIsReported(): void
@@ -25,13 +21,13 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $out = $this->runTask(['tag' => 'ec-page-1, ec-class-BlogPost']);
 
         $this->assertStringContainsString('Purge accepted: tags ec-page-1, ec-class-BlogPost', $out);
-        $this->assertNull($this->task->exitCode);
+        $this->assertSame(0, $this->exitCode);
         $this->assertSame([['tags', ['ec-page-1', 'ec-class-BlogPost']]], $this->adapter->calls);
     }
 
     public function testPurgeUrlTakesAbsoluteUrls(): void
     {
-        $this->runTask(['purge_url' => 'https://example.com/a.pdf, https://example.com/b.pdf']);
+        $this->runTask(['purge-url' => 'https://example.com/a.pdf, https://example.com/b.pdf']);
 
         $this->assertSame(
             [['urls', ['https://example.com/a.pdf', 'https://example.com/b.pdf']]],
@@ -39,25 +35,9 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         );
     }
 
-    public function testSakesOwnUrlVariableIsNotMistakenForAUrlToPurge(): void
-    {
-        // sake sets `url` to the task's path; it once went to the CDN as a URL to purge.
-        $out = $this->runTask(['everything' => '1', 'url' => 'dev/tasks/edge-cache-purge']);
-
-        $this->assertSame([['everything', []]], $this->adapter->calls);
-        $this->assertStringNotContainsString('urls', $out);
-    }
-
-    public function testAnAbsoluteUrlGivenAsUrlStillWorksOverHttp(): void
-    {
-        $this->runTask(['url' => 'https://example.com/a.pdf']);
-
-        $this->assertSame([['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
-    }
-
     public function testEverythingAndUrlsAreBothSent(): void
     {
-        $this->runTask(['everything' => '1', 'purge_url' => 'https://example.com/a.pdf']);
+        $this->runTask(['everything' => true, 'purge-url' => 'https://example.com/a.pdf']);
 
         $this->assertSame([['everything', []], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
     }
@@ -66,28 +46,28 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
     {
         $this->adapter->returnFalse = true;
 
-        $out = $this->runTask(['everything' => '1']);
+        $out = $this->runTask(['everything' => true]);
 
-        $this->assertSame('', $out, 'no success line');
-        $this->assertStringContainsString('did not accept the purge', $this->task->stderr);
-        $this->assertStringContainsString('edge-cache-status verify=1', $this->task->stderr);
-        $this->assertSame(1, $this->task->exitCode);
+        $this->assertStringNotContainsString('Purge accepted', $out);
+        $this->assertStringContainsString('did not accept the purge', $out);
+        $this->assertStringContainsString('edge-cache-status --verify', $out);
+        $this->assertSame(1, $this->exitCode);
     }
 
     public function testAThrowingAdapterIsAFailureToo(): void
     {
         $this->adapter->fail = true;
 
-        $this->runTask(['url' => 'https://example.com/a.pdf']);
+        $this->runTask(['purge-url' => 'https://example.com/a.pdf']);
 
-        $this->assertSame(1, $this->task->exitCode);
+        $this->assertSame(1, $this->exitCode);
     }
 
     public function testOutsideAnEnabledEnvironmentNothingIsPurged(): void
     {
         Environment::setEnv('SS_ENVIRONMENT_TYPE', 'dev');
 
-        $out = $this->runTask(['everything' => '1']);
+        $out = $this->runTask(['everything' => true]);
 
         $this->assertStringContainsString('not enabled for this environment', $out);
         $this->assertSame([], $this->adapter->calls);
@@ -97,19 +77,9 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
     {
         $out = $this->runTask([]);
 
-        $this->assertSame('', $out);
-        $this->assertStringContainsString('Nothing to purge', $this->task->stderr);
-        $this->assertStringContainsString('purge_url=', $this->task->stderr);
-        $this->assertSame(1, $this->task->exitCode);
-        $this->assertSame([], $this->adapter->calls);
-    }
-
-    public function testTheOldUrlFormUnderSakeFailsInsteadOfDoingNothing(): void
-    {
-        // sake replaces `url` with the task path, so a script still passing url=https://... sends no URL.
-        $this->runTask(['url' => 'dev/tasks/edge-cache-purge']);
-
-        $this->assertSame(1, $this->task->exitCode);
+        $this->assertStringContainsString('Nothing to purge', $out);
+        $this->assertStringContainsString('--purge-url=', $out);
+        $this->assertSame(1, $this->exitCode);
         $this->assertSame([], $this->adapter->calls);
     }
 }

@@ -3,21 +3,17 @@
 namespace Dynamic\EdgeCache\Tests\Task;
 
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
-use Dynamic\EdgeCache\Tests\Fixtures\TestableStatusTask;
-use SilverStripe\Control\HTTPRequest;
+use Dynamic\EdgeCache\Task\EdgeCacheStatusTask;
+use Dynamic\EdgeCache\Tests\Fixtures\RunsTasks;
 use SilverStripe\Core\Environment;
 
 class EdgeCacheStatusTaskTest extends EdgeCacheTestCase
 {
-    private TestableStatusTask $task;
+    use RunsTasks;
 
-    private function runTask(array $vars = []): string
+    private function runTask(array $options = []): string
     {
-        $this->task = new TestableStatusTask();
-        ob_start();
-        $this->task->run(new HTTPRequest('GET', '', $vars));
-
-        return (string) ob_get_clean();
+        return $this->runBuildTask(new EdgeCacheStatusTask(), $options);
     }
 
     public function testItReportsTheStateWithoutCallingTheCdn(): void
@@ -29,7 +25,7 @@ class EdgeCacheStatusTaskTest extends EdgeCacheTestCase
         $this->assertStringContainsString('Settings switch:  ticked', $out);
         $this->assertStringContainsString('Verify:           not run', $out);
         $this->assertSame([], $this->adapter->calls);
-        $this->assertNull($this->task->exitCode);
+        $this->assertSame(0, $this->exitCode);
     }
 
     public function testAnEnvironmentThatIsNotEnabledSaysSo(): void
@@ -43,21 +39,21 @@ class EdgeCacheStatusTaskTest extends EdgeCacheTestCase
 
     public function testVerifyReportsSuccess(): void
     {
-        $out = $this->runTask(['verify' => '1']);
+        $out = $this->runTask(['verify' => true]);
 
         $this->assertStringContainsString('Verify:           ok: Accepted.', $out);
-        $this->assertNull($this->task->exitCode);
+        $this->assertSame(0, $this->exitCode);
     }
 
     public function testAFailedVerifyExitsNonZeroWithTheCdnsReason(): void
     {
         $this->adapter->returnFalse = true;
 
-        $out = $this->runTask(['verify' => '1']);
+        $out = $this->runTask(['verify' => true]);
 
         $this->assertStringContainsString('FAILED: Cloudflare answered 403', $out);
-        $this->assertStringContainsString('did not verify', $this->task->stderr);
-        $this->assertSame(1, $this->task->exitCode);
+        $this->assertStringContainsString('did not verify', $out);
+        $this->assertSame(1, $this->exitCode);
     }
 
     public function testTheSettingsSwitchBeingOffIsShown(): void

@@ -5,7 +5,7 @@ namespace Dynamic\EdgeCache\Extension;
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\Core\Config\Config;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\Versioned\Versioned;
 
@@ -31,7 +31,7 @@ use SilverStripe\Versioned\Versioned;
  *
  * @property DataObject|static $owner
  */
-class EdgeCachePurgeable extends DataExtension
+class EdgeCachePurgeable extends Extension
 {
     /**
      * Name the purge callback is registered under on a relation list (by EdgeCacheQueryExtension).

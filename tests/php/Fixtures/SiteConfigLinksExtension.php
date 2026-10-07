@@ -3,12 +3,12 @@
 namespace Dynamic\EdgeCache\Tests\Fixtures;
 
 use SilverStripe\Dev\TestOnly;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 
 /**
  * A list on Settings, the way a site adds utility or footer links.
  */
-class SiteConfigLinksExtension extends DataExtension implements TestOnly
+class SiteConfigLinksExtension extends Extension implements TestOnly
 {
     private static $many_many = [
         'LinkTargets' => JoinTarget::class,

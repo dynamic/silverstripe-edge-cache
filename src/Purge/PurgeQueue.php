@@ -145,7 +145,7 @@ class PurgeQueue
         try {
             Injector::inst()->get(LoggerInterface::class)->error(
                 'Edge cache purge did not complete; changed pages stay cached until the edge lifetime ends. '
-                . 'Purge by hand with: sake dev/tasks/edge-cache-purge',
+                . 'Purge by hand with: sake tasks:edge-cache-purge',
                 $context + [
                     'everything' => $pending['everything'],
                     'tags' => array_slice($pending['tags'], 0, 30),
