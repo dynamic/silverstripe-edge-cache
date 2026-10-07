@@ -10,7 +10,10 @@ use SilverStripe\ORM\DataExtension;
  */
 class SiteConfigLinksExtension extends DataExtension implements TestOnly
 {
-    private static $many_many = ['LinkTargets' => JoinTarget::class];
+    private static $many_many = [
+        'LinkTargets' => JoinTarget::class,
+        'SettingsLinkTargets' => SettingsLinkTarget::class,
+    ];
 
     private static $many_many_extraFields = ['LinkTargets' => ['Sort' => 'Int']];
 }

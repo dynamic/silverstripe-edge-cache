@@ -8,6 +8,7 @@ use Dynamic\EdgeCache\Tests\Fixtures\JoinOwner;
 use Dynamic\EdgeCache\Tests\Fixtures\JoinTarget;
 use Dynamic\EdgeCache\Tests\Fixtures\ListedJoinOwner;
 use Dynamic\EdgeCache\Tests\Fixtures\PlainJoinOwner;
+use Dynamic\EdgeCache\Tests\Fixtures\SettingsLinkTarget;
 use Dynamic\EdgeCache\Tests\Fixtures\SiteConfigLinksExtension;
 use ReflectionMethod;
 use SilverStripe\SiteConfig\SiteConfig;
@@ -23,6 +24,7 @@ class EdgeCacheSiteConfigRelationTest extends EdgeCacheTestCase
         JoinOwner::class,
         ListedJoinOwner::class,
         PlainJoinOwner::class,
+        SettingsLinkTarget::class,
     ];
 
     protected static $required_extensions = [
@@ -75,6 +77,22 @@ class EdgeCacheSiteConfigRelationTest extends EdgeCacheTestCase
         $reorder = new ReflectionMethod($component, 'reorderItems');
         $reorder->setAccessible(true);
         $reorder->invoke($component, $config->LinkTargets()->sort('Sort'), [], [1 => $second->ID, 2 => $first->ID]);
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+    }
+
+    public function testLinkingSettingsFromTheOtherSideClearsTheSiteToo(): void
+    {
+        $target = SettingsLinkTarget::create(['Title' => 'Linked']);
+        $target->write();
+        PurgeQueue::singleton()->reset();
+
+        $target->SettingsOwners()->add(SiteConfig::current_site_config());
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+
+        PurgeQueue::singleton()->reset();
+        $target->SettingsOwners()->removeAll();
 
         $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
     }

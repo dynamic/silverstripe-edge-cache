@@ -73,7 +73,7 @@ App\Model\FooterLinkGroup:
   edge_cache_purge: everything
 ```
 
-Lists held by Settings (`SiteConfig`), such as utility or footer links, need no declaration: adding, removing or reordering their members clears the whole site, as saving Settings does.
+Lists held by Settings (`SiteConfig`), such as utility or footer links, need no declaration: adding, removing or reordering their members clears the whole site, as saving Settings does, whichever side of the relation is edited.
 
 It works from either side of the relation: ticking groups on a link purges for the group class when the group class opted in, whether or not the link class did. From the side that did not declare the relation, only the class as declared on the relation is purged, so a subclass tag of it is not.
 
