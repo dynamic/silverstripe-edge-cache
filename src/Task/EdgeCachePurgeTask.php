@@ -11,7 +11,7 @@ use SilverStripe\Dev\BuildTask;
  *
  *   everything=1        purge every cached page of the site
  *   tag=ec-page-12,...  purge by cache tag
- *   url=https://...     purge one or more absolute URLs (comma separated)
+ *   purge_url=https://... purge one or more absolute URLs (comma separated)
  *
  * Only runs in the environments the module is enabled for. Exits 1 when the CDN did not accept the
  * purge, so a deploy script can tell. Run `everything=1` after a deploy that changes templates, the
@@ -25,7 +25,7 @@ class EdgeCachePurgeTask extends BuildTask
 
     protected $title = 'Purge the CDN edge cache';
 
-    protected $description = 'Purges cached pages at the CDN: everything=1, tag=a,b or url=https://...';
+    protected $description = 'Purges cached pages at the CDN: everything=1, tag=a,b or purge_url=https://...';
 
     public function run($request)
     {
@@ -46,13 +46,16 @@ class EdgeCachePurgeTask extends BuildTask
             $queue->addTags($tags);
             $what[] = 'tags ' . implode(', ', $tags);
         }
-        if ($urls = $this->list($request->getVar('url'))) {
+        if ($urls = $this->urls($request)) {
             $queue->addUrls($urls);
             $what[] = 'urls ' . implode(', ', $urls);
         }
 
         if (!$what) {
-            $this->out('Nothing to purge. Pass everything=1, tag=a,b or url=https://...');
+            // A script that meant to purge something must not read this as success. Under sake `url=`
+            // never arrives (sake overwrites it with the task's path), so the old form lands here.
+            $this->fail('Nothing to purge. Pass everything=1, tag=a,b or purge_url=https://... (under sake, '
+                . 'url= is replaced by the task path: use purge_url=).');
 
             return;
         }
@@ -65,6 +68,24 @@ class EdgeCachePurgeTask extends BuildTask
         }
 
         $this->out('Purge accepted: ' . implode('; ', $what));
+    }
+
+    /**
+     * Absolute URLs from purge_url. sake overwrites its `url` variable with the task's path, so `url=`
+     * never reaches the task under sake; it is only read over HTTP, and only when it is an absolute URL.
+     *
+     * @return string[]
+     */
+    private function urls($request): array
+    {
+        $urls = $this->list($request->getVar('purge_url'));
+        foreach ($this->list($request->getVar('url')) as $url) {
+            if (preg_match('#^https?://#i', $url)) {
+                $urls[] = $url;
+            }
+        }
+
+        return array_values(array_unique($urls));
     }
 
     /**
