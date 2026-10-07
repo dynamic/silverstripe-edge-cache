@@ -61,6 +61,19 @@ Vendor\Model\FooterLink:
   edge_cache_purge: everything
 ```
 
+### Relations and reordering
+
+Adding, removing or clearing the records of a `many_many` relation writes only a join table, so no record event fires. A class that uses `EdgeCachePurgeable` also purges when one of its own `many_many` lists (including `many_many` through) changes, with the same setting as above: the class tag chain by default, the whole site for `edge_cache_purge: everything`.
+
+```yaml
+Vendor\Model\NavigationGroup:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCachePurgeable
+  edge_cache_purge: everything
+```
+
+Dragging rows into a new order in a `GridFieldOrderableRows` purges too when the relation is a plain `many_many` with an extra sort field. It is hooked on the class that declares the relation: a change made through the other side (`$target->Owners()->add($owner)`) purges only if that class opts in as well. Changes made with raw SQL are not seen.
+
 It has no effect on a class in the ignore lists (files, members, elements): no page carries a tag for those, and files and elements purge through their own hooks. It is opt-in per class on purpose: a purge for every write to every record would send API calls for form submissions and sessions, and Cloudflare's Free plan allows five tag purges a minute.
 
 ## Another CDN

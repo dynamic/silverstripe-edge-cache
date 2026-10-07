@@ -28,3 +28,11 @@ Only:
 DNADesign\Elemental\Models\BaseElement:
   extensions:
     - Dynamic\EdgeCache\Extension\EdgeCacheElementExtension
+---
+Name: dynamic-edgecache-orderable-rows
+Only:
+  classexists: 'Symbiote\GridFieldExtensions\GridFieldOrderableRows'
+---
+Symbiote\GridFieldExtensions\GridFieldOrderableRows:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheOrderableRowsExtension
