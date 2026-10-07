@@ -26,13 +26,14 @@ class PurgeQueueTest extends EdgeCacheTestCase
         $this->assertCount(51, $this->adapter->calls[0][1]);
     }
 
-    public function testEverythingWinsOverMoreSpecificPurges(): void
+    public function testEverythingWinsOverTagsButUrlsStillGoOut(): void
     {
         $queue = PurgeQueue::singleton();
         $queue->addTags('ec-page-1')->addUrls('https://example.com/a.pdf')->addEverything();
         $queue->flush();
 
-        $this->assertSame([['everything', []]], $this->adapter->calls);
+        // A file's URL does not carry the site tag, so purging everything would not clear it.
+        $this->assertSame([['everything', []], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
     }
 
     public function testTagsAndUrlsGoOutSeparately(): void

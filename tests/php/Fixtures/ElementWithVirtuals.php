@@ -21,8 +21,14 @@ class ElementWithVirtuals extends BaseElement implements TestOnly
      */
     public static array $virtualPages = [];
 
+    public static bool $lookupFails = false;
+
     public function getPublishedVirtualElements()
     {
+        if (self::$lookupFails) {
+            throw new \RuntimeException('table missing');
+        }
+
         return ArrayList::create(array_map(
             fn ($page) => new class ($page) {
                 public function __construct(private $page)

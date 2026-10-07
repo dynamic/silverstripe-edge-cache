@@ -29,6 +29,13 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $this->assertSame([['tags', ['ec-page-1', 'ec-class-BlogPost']]], $this->adapter->calls);
     }
 
+    public function testEverythingAndUrlsAreBothSent(): void
+    {
+        $this->runTask(['everything' => '1', 'url' => 'https://example.com/a.pdf']);
+
+        $this->assertSame([['everything', []], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
+    }
+
     public function testARefusedPurgeIsNotReportedAsSent(): void
     {
         $this->adapter->returnFalse = true;

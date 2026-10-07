@@ -21,11 +21,13 @@ class EdgeCacheElementExtensionTest extends EdgeCacheTestCase
         parent::setUp();
         Versioned::set_stage(Versioned::DRAFT);
         ElementWithVirtuals::$virtualPages = [];
+        ElementWithVirtuals::$lookupFails = false;
     }
 
     protected function tearDown(): void
     {
         ElementWithVirtuals::$virtualPages = [];
+        ElementWithVirtuals::$lookupFails = false;
         parent::tearDown();
     }
 
@@ -90,17 +92,53 @@ class EdgeCacheElementExtensionTest extends EdgeCacheTestCase
         $mirror->write();
         $other = Page::create(['Title' => 'Other mirror', 'ShowInMenus' => false]);
         $other->write();
-        // Two copies on the same page, and one with no page, must each count once or not at all.
-        ElementWithVirtuals::$virtualPages = [$mirror, $mirror, $other, null];
+        // Two copies on the same page count once.
+        ElementWithVirtuals::$virtualPages = [$mirror, $mirror, $other];
         PurgeQueue::singleton()->reset();
 
         $element->publishSingle();
 
-        $tags = PurgeQueue::singleton()->pending()['tags'];
+        $pending = PurgeQueue::singleton()->pending();
+        $this->assertFalse($pending['everything']);
         $this->assertEqualsCanonicalizing(
             ['ec-page-' . $page->ID, 'ec-page-' . $mirror->ID, 'ec-page-' . $other->ID],
-            $tags
+            $pending['tags']
         );
+    }
+
+    public function testAVirtualCopyWhosePageCannotBeFoundClearsTheSite(): void
+    {
+        [, $element] = $this->pageWithElement(ElementWithVirtuals::class);
+        ElementWithVirtuals::$virtualPages = [null];
+        PurgeQueue::singleton()->reset();
+
+        $element->publishSingle();
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+    }
+
+    public function testAVirtualCopyInsideAnotherElementClearsTheSite(): void
+    {
+        // getPage() can return the owning element (an element inside a group), not a page.
+        [, $element] = $this->pageWithElement(ElementWithVirtuals::class);
+        ElementWithVirtuals::$virtualPages = [ElementContent::create(['Title' => 'Group'])];
+        PurgeQueue::singleton()->reset();
+
+        $element->publishSingle();
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+    }
+
+    public function testAFailingVirtualLookupDoesNotBreakThePublishAndClearsTheSite(): void
+    {
+        [, $element] = $this->pageWithElement(ElementWithVirtuals::class);
+        ElementWithVirtuals::$lookupFails = true;
+        PurgeQueue::singleton()->reset();
+
+        $published = $element->publishSingle();
+
+        $this->assertTrue($published, 'the editor\'s publish went through');
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
     }
 
     public function testAnElementWithoutVirtualCopiesNeedsNoVirtualSupport(): void
