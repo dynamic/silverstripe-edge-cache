@@ -16,6 +16,10 @@ SilverStripe\CMS\Controllers\ContentController:
 SilverStripe\Assets\File:
   extensions:
     - Dynamic\EdgeCache\Extension\EdgeCacheFileExtension
+
+SilverStripe\ORM\DataObject:
+  extensions:
+    - Dynamic\EdgeCache\Extension\EdgeCacheQueryExtension
 ---
 Name: dynamic-edgecache-elemental
 Only:

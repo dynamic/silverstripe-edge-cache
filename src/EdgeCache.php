@@ -5,10 +5,12 @@ namespace Dynamic\EdgeCache;
 use Dynamic\EdgeCache\Adapter\EdgeCacheAdapter;
 use Dynamic\EdgeCache\Policy\EdgePolicy;
 use SilverStripe\Control\Director;
+use SilverStripe\Core\ClassInfo;
 use SilverStripe\Core\Config\Configurable;
 use SilverStripe\Core\Environment;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\ORM\DataObject;
 use SilverStripe\SiteConfig\SiteConfig;
 use SilverStripe\Versioned\Versioned;
 use Throwable;
@@ -43,12 +45,14 @@ class EdgeCache
     private static $enabled_environments = ['live'];
 
     /**
-     * Seconds the edge keeps a page. Purge on publish keeps this long lifetime safe.
+     * Seconds the edge keeps a page. Purge on publish clears the changes the module can see; this is
+     * the backstop for the ones it cannot (pages that list records through an ignored class, content
+     * behind a partial or application cache).
      *
      * @config
      * @var int
      */
-    private static $edge_ttl = 86400;
+    private static $edge_ttl = 21600;
 
     /**
      * @config
@@ -71,12 +75,44 @@ class EdgeCache
     private static $browser_max_age = 60;
 
     /**
-     * Most tags one page carries; the rest are dropped.
+     * Most tags one page may carry. A page that would carry more is not edge-cached: a truncated
+     * tag set would leave it out of purges it needs.
      *
      * @config
      * @var int
      */
-    private static $max_tags = 100;
+    private static $max_tags = 150;
+
+    /**
+     * Classes whose queries never become tags, matched exactly. Navigation and the page load query
+     * these on every page, so a tag for them would tie every page to every publish. A subclass that
+     * lists its own records (BlogPost) is still tagged.
+     *
+     * @config
+     * @var string[]
+     */
+    private static $auto_tag_ignore = [
+        'SilverStripe\\CMS\\Model\\SiteTree',
+        'Page',
+        'SilverStripe\\ORM\\DataObject',
+    ];
+
+    /**
+     * Classes whose queries never become tags, and every subclass of them. These are never what a
+     * page lists: elements and their area (publishing one purges the owner page directly), Settings
+     * (a save purges the site), files and security records.
+     *
+     * @config
+     * @var string[]
+     */
+    private static $auto_tag_ignore_descendants = [
+        'DNADesign\\Elemental\\Models\\BaseElement',
+        'DNADesign\\Elemental\\Models\\ElementalArea',
+        'SilverStripe\\SiteConfig\\SiteConfig',
+        'SilverStripe\\Assets\\File',
+        'SilverStripe\\Security\\Member',
+        'SilverStripe\\Security\\Group',
+    ];
 
     /**
      * URL path prefixes (no leading slash) that never get edge headers.
@@ -87,6 +123,15 @@ class EdgeCache
     private static $excluded_paths = ['admin', 'dev', 'Security'];
 
     private bool $cacheable = false;
+
+    private int $currentPageId = 0;
+
+    /**
+     * Classes whose subclass fields were lazy-loaded, with the ids of the records involved.
+     *
+     * @var array<string, array<int, true>>
+     */
+    private array $lazyClasses = [];
 
     /**
      * @var array<string, true>
@@ -177,14 +222,134 @@ class EdgeCache
     }
 
     /**
-     * @return string[] the site tag first, then the rest, capped at `max_tags`
+     * The page being rendered, so a lazy load of its own subclass fields is not mistaken for a
+     * list the page shows.
+     */
+    public function setCurrentPageId(int $id): void
+    {
+        $this->currentPageId = $id;
+    }
+
+    /**
+     * @return string[] the site tag first, then the rest in the order they were added
      */
     public function getTags(): array
     {
-        $tags = array_keys($this->tags);
-        $tags = array_slice(array_diff($tags, [self::SITE_TAG]), 0, max(0, (int) static::config()->get('max_tags') - 1));
+        $tags = $this->tags;
+        foreach ($this->lazyClasses as $class => $ids) {
+            // Only the page's own record: it says nothing about what the page lists.
+            if ($ids !== [$this->currentPageId => true]) {
+                $tags[self::classTag($class)] = true;
+            }
+        }
 
-        return array_merge([self::SITE_TAG], $tags);
+        return array_merge([self::SITE_TAG], array_keys(array_diff_key($tags, [self::SITE_TAG => true])));
+    }
+
+    /**
+     * True when the page carries more tags than `max_tags` allows.
+     */
+    public function isTagOverflow(): bool
+    {
+        return count($this->getTags()) > (int) static::config()->get('max_tags');
+    }
+
+    /**
+     * Whether queries are being recorded as tags. A static flag, so the query hook costs nothing
+     * on requests that are not edge-cached.
+     */
+    public static function isCollecting(): bool
+    {
+        return CollectionState::isActive();
+    }
+
+    public function startCollecting(): void
+    {
+        CollectionState::set(true);
+    }
+
+    public function stopCollecting(): void
+    {
+        CollectionState::set(false);
+    }
+
+    /**
+     * Record that the current page queried a class, unless the class is ignored.
+     */
+    /**
+     * @return string|null the tag this call added, or null when the class is ignored or the page
+     *                     already carried the tag
+     */
+    public function collectClass(string $class): ?string
+    {
+        if ($this->isIgnoredClass($class)) {
+            return null;
+        }
+
+        $tag = self::classTag($class);
+        if (isset($this->tags[$tag])) {
+            return null;
+        }
+        $this->addTags($tag);
+
+        return $tag;
+    }
+
+    /**
+     * Take back a tag that turned out not to describe something the page lists.
+     */
+    public function forgetTag(string $tag): void
+    {
+        unset($this->tags[$tag]);
+    }
+
+    /**
+     * Record that a record's subclass fields were lazy-loaded while the page rendered.
+     */
+    public function collectLazyClass(string $class, int $recordId): void
+    {
+        if (!$this->isIgnoredClass($class)) {
+            $this->lazyClasses[$class][$recordId] = true;
+        }
+    }
+
+    public function isIgnoredClass(string $class): bool
+    {
+        $class = ltrim($class, '\\');
+        $exact = array_map(
+            fn ($name) => strtolower(ltrim($name, '\\')),
+            (array) static::config()->get('auto_tag_ignore')
+        );
+        if (in_array(strtolower($class), $exact, true)) {
+            return true;
+        }
+
+        foreach ((array) static::config()->get('auto_tag_ignore_descendants') as $ancestor) {
+            if (is_a($class, ltrim($ancestor, '\\'), true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Class tags for a record being purged: its class and every parent class below DataObject.
+     * Parents the site ignores when tagging are included, because a page can declare one
+     * (a sitemap listing every page declares SiteTree).
+     *
+     * @return string[]
+     */
+    public static function classChainTags(string $class): array
+    {
+        $tags = [];
+        foreach (ClassInfo::ancestry($class) as $ancestor) {
+            if ($ancestor !== DataObject::class && is_subclass_of($ancestor, DataObject::class)) {
+                $tags[] = self::classTag($ancestor);
+            }
+        }
+
+        return $tags;
     }
 
     public static function pageTag(int|string $id): string
@@ -206,6 +371,9 @@ class EdgeCache
     {
         $this->cacheable = false;
         $this->tags = [];
+        $this->lazyClasses = [];
+        $this->currentPageId = 0;
+        CollectionState::set(false);
     }
 
     /**

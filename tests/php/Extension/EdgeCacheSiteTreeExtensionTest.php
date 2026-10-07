@@ -43,6 +43,7 @@ class EdgeCacheSiteTreeExtensionTest extends EdgeCacheTestCase
         $this->assertContains('ec-page-' . $child->ID, $pending['tags']);
         $this->assertContains('ec-page-' . $holder->ID, $pending['tags']);
         $this->assertContains('ec-class-Page', $pending['tags']);
+        $this->assertContains('ec-class-SiteTree', $pending['tags']);
     }
 
     public function testChangingTheTitleClearsTheWholeSite(): void
@@ -72,7 +73,8 @@ class EdgeCacheSiteTreeExtensionTest extends EdgeCacheTestCase
 
     public function testCopyVersionToStageForAContentChangeIsTargeted(): void
     {
-        $page = $this->page('Same title');
+        $holder = $this->page('Holder');
+        $page = $this->page('Same title', $holder);
         PurgeQueue::singleton()->reset();
 
         $page->Content = '<p>new</p>';
@@ -82,6 +84,9 @@ class EdgeCacheSiteTreeExtensionTest extends EdgeCacheTestCase
         $pending = PurgeQueue::singleton()->pending();
         $this->assertFalse($pending['everything']);
         $this->assertContains('ec-page-' . $page->ID, $pending['tags']);
+        $this->assertContains('ec-page-' . $holder->ID, $pending['tags']);
+        $this->assertContains('ec-class-Page', $pending['tags']);
+        $this->assertContains('ec-class-SiteTree', $pending['tags']);
     }
 
     public function testUnpublishingClearsTheWholeSite(): void

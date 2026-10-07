@@ -14,8 +14,9 @@ use SilverStripe\Versioned\Versioned;
 /**
  * Purges the edge when a page reaches or leaves the Live stage.
  *
- * A page's own tag clears its own URL (every query-string variant included) and the tags of its
- * ancestors clear the holder pages that list it. A change to anything the navigation or footer
+ * A page's own tag clears its own URL (every query-string variant included), the tags of its
+ * ancestors clear the holder pages that list it, and its class tags clear pages that list records
+ * of that class (a home page showing recent posts). A change to anything the navigation or footer
  * shows (title, URL, position, menu visibility) clears the whole site instead, since those render
  * on every page.
  *
@@ -83,7 +84,7 @@ class EdgeCacheSiteTreeExtension extends DataExtension
             return;
         }
 
-        $tags = [EdgeCache::pageTag($owner->ID), EdgeCache::classTag($owner->ClassName)];
+        $tags = array_merge([EdgeCache::pageTag($owner->ID)], EdgeCache::classChainTags(get_class($owner)));
         foreach ($this->ancestorIds() as $id) {
             $tags[] = EdgeCache::pageTag($id);
         }
