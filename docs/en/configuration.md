@@ -32,7 +32,7 @@ All of these must hold:
 7. The response is a 200 to a GET or HEAD request and sets no cookie.
 8. The page carries no more than `max_tags` tags.
 
-After changing `SS_ENVIRONMENT_TYPE` (for example dev to live on a local copy), run `sake dev/build flush=1`. Silverstripe's own cache-control defaults differ by environment and are stored in the config manifest, so until it is rebuilt every page stays `no-cache, no-store` and condition 6 fails.
+After changing `SS_ENVIRONMENT_TYPE` (for example dev to live on a local copy), run `sake dev/build flush=1`. Silverstripe's own cache-control defaults differ by environment and are stored in the config manifest, so until it is rebuilt every page stays `no-cache, no-store` and condition 6 fails. The web process keeps its own copy of that cache when it runs as a different user than the command line, so if pages stay `no-store`, also request any page with `?flush=1` (a live site asks for an administrator login for that).
 
 A page the controller made public that fails 7 or 8 is changed to `private, must-revalidate`, so a public header never leaves without edge handling behind it.
 
