@@ -63,7 +63,7 @@ Vendor\Model\FooterLink:
 
 ### Relations and reordering
 
-Adding, removing or clearing the records of a `many_many` relation writes only a join table, so no record event fires. A class that uses `EdgeCachePurgeable` also purges when one of its own `many_many` lists (including `many_many` through) changes, with the same setting as above: the class tag chain by default, the whole site for `edge_cache_purge: everything`.
+Adding, removing or clearing the records of a `many_many` relation writes only a join table, so no record event fires. A class that uses `EdgeCachePurgeable` also purges when a `many_many` list it belongs to changes (including `many_many` through), with the same setting as above: the class tag chain by default, the whole site for `edge_cache_purge: everything`.
 
 ```yaml
 Vendor\Model\NavigationGroup:
@@ -72,7 +72,11 @@ Vendor\Model\NavigationGroup:
   edge_cache_purge: everything
 ```
 
-Dragging rows into a new order in a `GridFieldOrderableRows` purges too when the relation is a plain `many_many` with an extra sort field. It is hooked on the class that declares the relation: a change made through the other side (`$target->Owners()->add($owner)`) purges only if that class opts in as well. Changes made with raw SQL are not seen.
+It works from either side of the relation: ticking groups on a link purges for the group class when the group class opted in, whether or not the link class did. From the side that did not declare the relation, only the class as declared on the relation is purged, so a subclass tag of it is not.
+
+Dragging rows into a new order in a `GridFieldOrderableRows` purges too, for a plain `many_many` with an extra sort field and for `many_many` through.
+
+Not seen: changes made with raw SQL, other sortable GridField modules, `ManyManyList::setExtraData()`, and adding an already-linked record to a `many_many` through list just to change its extra fields. After one of those, save the owner record or run `sake dev/tasks/edge-cache-purge everything=1`.
 
 It has no effect on a class in the ignore lists (files, members, elements): no page carries a tag for those, and files and elements purge through their own hooks. It is opt-in per class on purpose: a purge for every write to every record would send API calls for form submissions and sessions, and Cloudflare's Free plan allows five tag purges a minute.
 

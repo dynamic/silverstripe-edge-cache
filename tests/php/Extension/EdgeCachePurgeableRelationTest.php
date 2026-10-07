@@ -111,15 +111,33 @@ class EdgeCachePurgeableRelationTest extends EdgeCacheTestCase
         $this->assertSame(['One', 'Two'], $owner->Targets()->sort('Title')->column('Title'));
     }
 
-    public function testTheListIsHookedOnTheClassThatOptedIn(): void
+    public function testEditingFromTheOtherSideStillPurgesTheClassThatOptedIn(): void
     {
         $owner = $this->owner();
         $target = $this->target();
 
-        // Edited from the other side, whose class did not opt in: nothing to purge for it.
+        // The target class did not opt in; the owner class did.
         $target->Owners()->add($owner);
 
-        $this->assertTrue(PurgeQueue::singleton()->isEmpty());
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+
+        PurgeQueue::singleton()->reset();
+        $target->Owners()->remove($owner);
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+    }
+
+    public function testTheOtherSideUsesTheOwnersSettingNotItsOwn(): void
+    {
+        $owner = ListedJoinOwner::create(['Title' => 'Team']);
+        $owner->write();
+        $target = $this->target();
+
+        $target->ListedOwners()->add($owner);
+
+        $pending = PurgeQueue::singleton()->pending();
+        $this->assertFalse($pending['everything']);
+        $this->assertSame(['ec-class-ListedJoinOwner'], $pending['tags']);
     }
 
     public function testTheDefaultModePurgesTheOwnersClassTag(): void
@@ -173,6 +191,27 @@ class EdgeCachePurgeableRelationTest extends EdgeCacheTestCase
         PurgeQueue::singleton()->reset();
 
         // What GridFieldOrderableRows does on a drag: the sort column is written with a raw query.
+        $list = $owner->Targets()->sort('Sort');
+        $component = new GridFieldOrderableRows('Sort');
+        $reorder = new ReflectionMethod($component, 'reorderItems');
+        $reorder->setAccessible(true);
+        $reorder->invoke($component, $list, [], [1 => $second->ID, 2 => $first->ID]);
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+        $this->assertSame(['Two', 'One'], $owner->Targets()->sort('Sort')->column('Title'));
+    }
+
+    public function testReorderingAManyManyThroughListPurges(): void
+    {
+        $owner = ThroughOwner::create(['Title' => 'Through']);
+        $owner->write();
+        $first = $this->target('One');
+        $second = $this->target('Two');
+        $owner->Targets()->add($first, ['Sort' => 1]);
+        $owner->Targets()->add($second, ['Sort' => 2]);
+        PurgeQueue::singleton()->reset();
+
+        // A through list reorders by saving the join record, which does not opt in to purging.
         $list = $owner->Targets()->sort('Sort');
         $component = new GridFieldOrderableRows('Sort');
         $reorder = new ReflectionMethod($component, 'reorderItems');
