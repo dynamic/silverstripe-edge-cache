@@ -12,8 +12,8 @@ use SilverStripe\Core\Injector\Injectable;
  * Reads the zone's cache ruleset and writes it back with this module's rules merged in.
  *
  * A PUT to the ruleset entrypoint replaces the whole ruleset, so the rules already there are read
- * first and sent back untouched. Needs a token with Zone > Cache Rules > Edit as well as the
- * purge permission.
+ * first and sent back untouched. Needs a token with the "Cache Settings" permission group
+ * (dashboard: Cache Rules) on this zone: Read to plan, Write to validate or change.
  */
 class RulesProvisioner
 {

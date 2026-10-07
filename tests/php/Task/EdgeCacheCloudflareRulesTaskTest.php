@@ -92,6 +92,24 @@ class EdgeCacheCloudflareRulesTaskTest extends SapphireTest
         $this->assertCount(2, $this->history, 'the real write never happened');
     }
 
+    public function testValidateAndApplyRefuseWithoutAHost(): void
+    {
+        foreach (['validate', 'apply'] as $mode) {
+            $this->history = [];
+            $out = $this->runTask([$mode => '1']);
+
+            $this->assertStringContainsString('Pass host=', $out, $mode);
+            $this->assertCount(0, $this->history, 'nothing was sent to Cloudflare for ' . $mode);
+        }
+    }
+
+    public function testPrintingThePlanDoesNotNeedAHost(): void
+    {
+        $out = $this->runTask([], $this->ok());
+
+        $this->assertStringContainsString('Dry run for host', $out);
+    }
+
     public function testRemoveReportsWhatItRemoved(): void
     {
         $ours = (new \Dynamic\EdgeCache\Cloudflare\CacheRuleset())->rules('example.com');

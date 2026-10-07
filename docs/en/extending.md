@@ -72,5 +72,5 @@ Implement `Dynamic\EdgeCache\Adapter\EdgeCacheAdapter` and register it through I
 | `isConfigured()` | Credentials present. False keeps the site on its normal headers |
 | `edgeHeaders(EdgePolicy)` | The header(s) your edge reads for lifetime (Fastly: `Surrogate-Control`) |
 | `tagHeaderName()`, `formatTags()` | Where tags go and how they are joined (Fastly: `Surrogate-Key`, space separated) |
-| `allowedVary()` | `Vary` values the edge tolerates while still caching, or null for no restriction. When it returns a list (Imperva allows only `Accept-Encoding`), the middleware removes every other `Vary` value from responses it hands to the edge. That is safe here because the other representation of a URL, Markdown, is `no-store` |
+| `allowedVary()` | `Vary` values the edge tolerates while still caching, or null for no restriction. When it returns a list (Imperva allows only `Accept-Encoding`), the middleware removes every other `Vary` value from responses it hands to the edge. That is safe only when no other variant of a URL is ever cached. Here Markdown is `no-store`, Ajax responses are never public, and the site serves one scheme, but check that holds for the site before relying on it |
 | `purgeTags()`, `purgeUrls()`, `purgeEverything()` | Purge calls. Return false on failure; never throw |

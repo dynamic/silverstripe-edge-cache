@@ -78,6 +78,19 @@ class CacheRulesetTest extends SapphireTest
         $this->assertStringContainsString('ex\\"ample.com', $rules[0]['expression']);
     }
 
+    public function testOnlyTheStaticRuleReachesStaticFiles(): void
+    {
+        $rules = array_column((new CacheRuleset())->rules('example.com'), null, 'ref');
+        $prefix = CacheRuleset::REF_PREFIX;
+
+        foreach (['pages', 'bypass-session', 'bypass-markdown', 'bypass-bots'] as $name) {
+            $expression = $rules[$prefix . $name]['expression'];
+            $this->assertStringContainsString('not starts_with(http.request.uri.path, "/_resources")', $expression, $name);
+            $this->assertStringContainsString('not starts_with(http.request.uri.path, "/assets")', $expression, $name);
+        }
+        $this->assertStringNotContainsString('not starts_with', $rules[$prefix . 'static']['expression']);
+    }
+
     public function testRemoveOwnedKeepsEveryOtherRule(): void
     {
         $ruleset = new CacheRuleset();

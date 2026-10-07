@@ -62,12 +62,15 @@ class CacheRuleset
             fn ($path) => sprintf('not starts_with(http.request.uri.path, "%s")', $this->quote($path)),
             (array) static::config()->get('excluded_paths')
         );
+        // The pages rule and the bypasses share this condition, so a bypass never reaches the static
+        // files the static rule caches, or paths the zone's other rules handle.
+        $onPages = sprintf('%s and %s', $onHost, implode(' and ', $excluded));
 
         return [
             $this->rule(
                 'pages',
                 'Cache HTML pages the origin marks cacheable',
-                sprintf('(%s and %s)', $onHost, implode(' and ', $excluded)),
+                sprintf('(%s)', $onPages),
                 ['cache' => true, 'edge_ttl' => ['mode' => 'bypass_by_default']]
             ),
             $this->rule(
@@ -86,19 +89,19 @@ class CacheRuleset
             $this->rule(
                 'bypass-session',
                 'Bypass for a Silverstripe session cookie (editors and visitors with a session)',
-                sprintf('(%s and (http.cookie contains "PHPSESSID" or http.cookie contains "SECSESSID"))', $onHost),
+                sprintf('(%s and (http.cookie contains "PHPSESSID" or http.cookie contains "SECSESSID"))', $onPages),
                 ['cache' => false]
             ),
             $this->rule(
                 'bypass-markdown',
                 'Bypass when the client asks for Markdown (aeo content negotiation)',
-                sprintf('(%s and any(http.request.headers["accept"][*] contains "text/markdown"))', $onHost),
+                sprintf('(%s and any(http.request.headers["accept"][*] contains "text/markdown"))', $onPages),
                 ['cache' => false]
             ),
             $this->rule(
                 'bypass-bots',
                 'Bypass for verified bots so the origin sees them',
-                sprintf('(%s and cf.client.bot)', $onHost),
+                sprintf('(%s and cf.client.bot)', $onPages),
                 ['cache' => false]
             ),
         ];

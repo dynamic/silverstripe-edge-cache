@@ -17,20 +17,22 @@ Use two, so the token on the server can do nothing but purge:
 | Token | Lives | Permissions (this zone only) |
 |---|---|---|
 | Runtime | the server's `.env` (`EDGECACHE_CLOUDFLARE_API_TOKEN`) | Zone > Cache Purge > Purge |
-| Provisioning | your machine, for one run of the rules task | Zone > Cache Settings > Edit (Cache Rules), plus Zone Settings > Edit if you also change Tiered Cache. Delete it afterwards |
+| Provisioning | your shell, for one run of the rules task | Zone > Cache Rules > Edit (API permission group "Cache Settings"), plus Zone Settings > Edit if you also change Tiered Cache. Delete it afterwards |
 
-Also set `EDGECACHE_CLOUDFLARE_ZONE_ID`. The Global API Key should not be used by the application.
+Also set `EDGECACHE_CLOUDFLARE_ZONE_ID`. The task reads the same variable name for both tokens, so for the provisioning run export the provisioning token as `EDGECACHE_CLOUDFLARE_API_TOKEN` in that shell only (for DDEV, `ddev exec` with the variable set), never in the server's `.env`. The Global API Key should not be used by the application.
 
 ## Cache Rules
 
 ```
-sake dev/tasks/edge-cache-cloudflare-rules                  # print the ruleset, write nothing
-sake dev/tasks/edge-cache-cloudflare-rules validate=1       # Cloudflare checks it (dry run), writes nothing
-sake dev/tasks/edge-cache-cloudflare-rules apply=1          # dry run, then write
-sake dev/tasks/edge-cache-cloudflare-rules remove=1         # rollback: remove this module's rules only
+sake dev/tasks/edge-cache-cloudflare-rules                                    # print the ruleset, write nothing
+sake dev/tasks/edge-cache-cloudflare-rules validate=1 host=www.example.com   # Cloudflare checks it (dry run), writes nothing
+sake dev/tasks/edge-cache-cloudflare-rules apply=1 host=www.example.com      # dry run, then write
+sake dev/tasks/edge-cache-cloudflare-rules remove=1                          # rollback: remove this module's rules only
 ```
 
-The task reads the zone's existing cache rules, keeps them, and adds five of its own after them (a rule that comes later wins when settings conflict):
+`validate=1` and `apply=1` refuse to run without `host=`. A local or staging site's base URL is not the host the zone serves, and rules written for it would replace the production rules. The ruleset holds one set of rules, so use one host per zone.
+
+The task reads the zone's existing cache rules, keeps them, and adds five of its own after them (a rule that comes later wins when settings conflict). Rules 1, 3, 4 and 5 apply to page paths only: not `/admin`, `/Security`, `/dev`, `/_resources` or `/assets`.
 
 1. Pages: eligible for cache, lifetime from the origin header, bypass when the origin sends none.
 2. `/_resources/`: cached for `static_edge_ttl` (1 day). Purge the prefix after a deploy that changes theme images, which carry no `?m=` cache-buster.
@@ -44,11 +46,11 @@ Running it again changes nothing, and `remove=1` takes back only the rules whose
 
 ## Page Rules already on the zone
 
-A zone often already has a Page Rule such as `*example.com/*` with Cache Everything and Origin Cache Control. Cache Rules take precedence over Page Rules where both match, so the two can coexist. Until the origin sends public headers nothing changes, because Origin Cache Control respects the `private` the site sends today. Leave the Page Rules in place through the rollout and remove them as a separate step once the Cache Rules are proven. Cache Everything also caches `/assets/` for the zone's default edge lifetime, which the module's rules do not touch.
+A zone often already has a Page Rule such as `*example.com/*` with Cache Everything and Origin Cache Control. Cache Rules take precedence over Page Rules where both match, so the two can coexist. For HTML, applying the rules changes nothing until the origin sends public headers, because Origin Cache Control respects the `private` the site sends today. The one rule that changes behaviour straight away is rule 2: files under `/_resources/` are cached for the configured lifetime, overriding what the origin or the Page Rule would do. Leave the Page Rules in place through the rollout and remove them as a separate step once the Cache Rules are proven. Cache Everything also caches `/assets/` for the zone's default edge lifetime, which the module's rules do not touch.
 
 ## Rolling out
 
-1. Deploy the module with the Settings box unticked. Headers are unchanged.
+1. Deploy the module with the Settings box unticked. Page headers are unchanged.
 2. `validate=1`, review the printed rules, then `apply=1`.
 3. Optionally enable Smart Tiered Cache (it needs Zone Settings > Edit): `PATCH /zones/{zone}/cache/tiered_cache_smart_topology_enable` with `{"value":"on"}`. On a low-traffic site it collapses per-location misses into one origin fetch.
 4. Tick **Serve pages from the CDN edge cache** in Settings > Caching (the save clears the cached pages). Run the checks below.

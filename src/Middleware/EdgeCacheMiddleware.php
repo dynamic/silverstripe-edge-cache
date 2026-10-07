@@ -129,8 +129,9 @@ class EdgeCacheMiddleware implements HTTPMiddleware
     /**
      * Keep only the `Vary` values the edge tolerates. An edge that will not cache a response whose
      * `Vary` names anything beyond `Accept-Encoding` (Imperva) needs the rest removed. That is safe
-     * for what this module sends: the other representation of a URL (Markdown) is `no-store`, so it
-     * never shares a cache entry with the HTML.
+     * only when no other variant of the URL is cached: Markdown is `no-store` and Ajax responses are
+     * never public, but a site with a variant the module does not know about (http and https served
+     * differently) must check before using such an adapter.
      *
      * @param string[] $allowed
      */

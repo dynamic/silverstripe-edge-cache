@@ -15,9 +15,15 @@ use Throwable;
  *   apply=1         check with a dry run, then write
  *   novalidate=1    with apply=1, skip the dry run
  *   remove=1        remove this module's rules and keep every other rule (rollback)
- *   host=...        override the host taken from the site's base URL
+ *   host=...        the public host the rules are for (www.example.com)
  *
- * Reading needs Zone > Cache Settings > Read; validating and writing need Cache Settings > Write.
+ * validate=1 and apply=1 require host=: the base URL of a local or staging site is not the host the
+ * zone serves, and rules written for it would replace the production rules. The ruleset holds one
+ * set of rules, so one host per zone.
+ *
+ * Needs the Cloudflare API permission group "Cache Settings" (dashboard: Cache Rules): Read to print
+ * the plan, Write (Edit) to validate or change it. Export the token as EDGECACHE_CLOUDFLARE_API_TOKEN
+ * for the run.
  */
 class EdgeCacheCloudflareRulesTask extends BuildTask
 {
@@ -42,9 +48,16 @@ class EdgeCacheCloudflareRulesTask extends BuildTask
                 return;
             }
 
-            $host = (string) ($request->getVar('host') ?: parse_url(Director::absoluteBaseURL(), PHP_URL_HOST));
             $apply = (bool) $request->getVar('apply');
             $validate = (bool) $request->getVar('validate');
+            $host = (string) $request->getVar('host');
+            if (($apply || $validate) && $host === '') {
+                $this->out('Pass host=www.example.com: the host the zone serves, not this site\'s base URL. '
+                    . 'Rules written for the wrong host would replace the production rules.');
+
+                return;
+            }
+            $host = $host ?: (string) parse_url(Director::absoluteBaseURL(), PHP_URL_HOST);
 
             if ($apply) {
                 $rules = $provisioner->apply($host, !$request->getVar('novalidate'));
