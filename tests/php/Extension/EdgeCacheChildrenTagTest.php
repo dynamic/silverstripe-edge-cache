@@ -109,4 +109,30 @@ class EdgeCacheChildrenTagTest extends EdgeCacheTestCase
         $tags = PurgeQueue::singleton()->pending()['tags'];
         $this->assertSame([], array_filter($tags, fn ($t) => str_starts_with($t, 'ec-children-')));
     }
+
+    public function testPublishingAChildThroughCopyVersionToStagePurgesTheChildrenTag(): void
+    {
+        // The content API publishes this way.
+        $holder = $this->published(ChildrenHolderPage::class, 'News');
+        $story = $this->published(Page::class, 'Story', $holder->ID);
+
+        Versioned::set_stage(Versioned::DRAFT);
+        $story = Page::get()->byID($story->ID);
+        $story->Content = 'Via API';
+        $story->write();
+        PurgeQueue::singleton()->reset();
+
+        $story->copyVersionToStage(Versioned::DRAFT, Versioned::LIVE);
+
+        $pending = PurgeQueue::singleton()->pending();
+        $this->assertFalse($pending['everything']);
+        $this->assertContains('ec-children-' . $holder->ID, $pending['tags']);
+    }
+
+    public function testAnUnsavedHolderIsNotTagged(): void
+    {
+        $tags = $this->tags(fn () => ChildrenHolderPage::create()->Children()->toArray());
+
+        $this->assertSame(['ec-site'], $tags);
+    }
 }

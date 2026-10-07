@@ -49,7 +49,7 @@ App\Model\Banner:
 
 Both ends count: one makes a record appear, the other makes it disappear. The earliest future value across every record of the class wins (the page may not show that record; a boundary coming is enough). A subclass inherits the fields, and fields only a subclass configures are found when a page lists the parent class. The fields must be Date or Datetime. A Date is a boundary at the start of that day and again at the start of the next, so a start date and an inclusive end date are both caught. The cap only ever shortens `edge_ttl`.
 
-Which classes a page "listed" is what its queries touched, plus the classes it declares (`edge_cache_depends_on`, or `EdgeCache::singleton()->declareClass()` from an `updateEdgeCacheTags` hook). Classes the module never collects (pages, elements and their areas, files, members) are not seen from a query, so declare them:
+Which classes a page "listed" is what its queries touched, plus the classes it declares (`edge_cache_depends_on`, or `EdgeCache::singleton()->declareClass()` from an `updateEdgeCacheTags` hook). Classes the module never collects (pages, elements and their areas, files) are not seen from a query, so declare them:
 
 - A page or element with its own start and end fields is declared automatically when it sets `edge_cache_schedule_fields`.
 - A page that lists scheduled pages (news, events) declares them: `private static $edge_cache_depends_on = [NewsPage::class];`.

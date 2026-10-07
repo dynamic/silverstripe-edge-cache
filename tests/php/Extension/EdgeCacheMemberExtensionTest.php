@@ -5,17 +5,24 @@ namespace Dynamic\EdgeCache\Tests\Extension;
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
+use Dynamic\EdgeCache\Tests\Fixtures\AuthorMember;
+use Dynamic\EdgeCache\Tests\Fixtures\ChildrenHolderPage;
 use Page;
-use SilverStripe\Control\Director;
-use SilverStripe\Control\Middleware\HTTPCacheControlMiddleware;
+use PageController;
+use SilverStripe\Control\HTTPRequest;
+use SilverStripe\Security\Group;
 use SilverStripe\Security\Member;
+use SilverStripe\Security\Security;
 use SilverStripe\Versioned\Versioned;
+use SilverStripe\View\SSViewer;
 
 /**
  * A page that lists authors is tagged with the Member class, and a change to a name purges it.
  */
 class EdgeCacheMemberExtensionTest extends EdgeCacheTestCase
 {
+    protected static $extra_dataobjects = [AuthorMember::class, ChildrenHolderPage::class];
+
     private function member(): Member
     {
         $member = Member::create(['FirstName' => 'Ada', 'Surname' => 'Lovelace', 'Email' => 'ada@example.com']);
@@ -114,24 +121,117 @@ class EdgeCacheMemberExtensionTest extends EdgeCacheTestCase
         $this->assertSame(['ec-class-Member'], PurgeQueue::singleton()->pending()['tags']);
     }
 
-    public function testAnAnonymousPageRenderIsNotTaggedWithMembers(): void
+    public function testAMemberSubclassPurgesItsOwnTagAndMembers(): void
     {
-        // Core switches HTTP caching off in dev; run as a live site would.
-        HTTPCacheControlMiddleware::reset();
-        HTTPCacheControlMiddleware::config()->set('defaultState', HTTPCacheControlMiddleware::STATE_ENABLED);
-        HTTPCacheControlMiddleware::config()->set('defaultForcingLevel', 0);
+        $author = AuthorMember::create(['FirstName' => 'Ada', 'Email' => 'author@example.com']);
+        $author->write();
+        PurgeQueue::singleton()->reset();
 
+        $author->FirstName = 'Augusta';
+        $author->write();
+
+        $this->assertEqualsCanonicalizing(
+            ['ec-class-Member', 'ec-class-AuthorMember'],
+            PurgeQueue::singleton()->pending()['tags']
+        );
+    }
+
+    public function testListingASubclassTagsIt(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->startCollecting();
+        AuthorMember::get()->toArray();
+        $edge->stopCollecting();
+
+        $this->assertContains('ec-class-AuthorMember', $edge->getTags());
+    }
+
+    public function testAddingAMemberToAGroupPurgesPagesThatListMembers(): void
+    {
+        $member = $this->member();
+        $group = Group::create(['Title' => 'Staff']);
+        $group->write();
+        PurgeQueue::singleton()->reset();
+
+        $group->Members()->add($member);
+        $this->assertSame(['ec-class-Member'], PurgeQueue::singleton()->pending()['tags']);
+
+        PurgeQueue::singleton()->reset();
+        $group->Members()->remove($member);
+        $this->assertSame(['ec-class-Member'], PurgeQueue::singleton()->pending()['tags']);
+    }
+
+    public function testAddingAGroupToAMemberPurgesToo(): void
+    {
+        $member = $this->member();
+        $group = Group::create(['Title' => 'Staff']);
+        $group->write();
+        PurgeQueue::singleton()->reset();
+
+        $member->Groups()->add($group);
+
+        $this->assertSame(['ec-class-Member'], PurgeQueue::singleton()->pending()['tags']);
+    }
+
+    public function testRenderingANavigationMenuDoesNotTagMembers(): void
+    {
+        $this->publish(Page::class, 'Home');
+        $about = $this->publish(Page::class, 'About');
+        $this->publish(Page::class, 'Team', $about->ID);
+
+        $tags = $this->renderTags($about, '<% loop $Menu(1) %>$Title<% if $Children %>x<% end_if %><% end_loop %>');
+
+        $this->assertNotContains('ec-class-Member', $tags);
+        $this->assertSame([], array_filter($tags, fn ($t) => str_starts_with($t, 'ec-children-')), 'a plain page opts out');
+    }
+
+    public function testAMenuTagsAnOptedInHolderWhichIsWhyItIsOptIn(): void
+    {
+        $holder = $this->publish(ChildrenHolderPage::class, 'News');
+
+        $tags = $this->renderTags($holder, '<% loop $Menu(1) %><% if $Children %>x<% end_if %><% end_loop %>');
+
+        $this->assertContains('ec-children-' . $holder->ID, $tags);
+    }
+
+    public function testATemplateThatListsMembersTagsThePage(): void
+    {
+        $page = $this->publish(Page::class, 'Team');
+        $this->member();
+
+        $tags = $this->renderTags($page, '<% loop $Members %>$FirstName<% end_loop %>', ['Members' => Member::get()]);
+
+        $this->assertContains('ec-class-Member', $tags);
+    }
+
+    private function publish(string $class, string $title, int $parentId = 0): Page
+    {
         Versioned::set_stage(Versioned::DRAFT);
-        $page = Page::create(['Title' => 'About', 'URLSegment' => 'about']);
+        $page = $class::create(['Title' => $title, 'ParentID' => $parentId, 'ShowInMenus' => true]);
         $page->write();
         $page->publishSingle();
         Versioned::set_stage(Versioned::LIVE);
+        PurgeQueue::singleton()->reset();
 
-        $response = Director::test('about');
+        return $page;
+    }
 
-        $this->assertSame(200, $response->getStatusCode());
-        $tags = (string) $response->getHeader('Cache-Tag');
-        $this->assertStringContainsString('ec-page-' . $page->ID, $tags, 'the page was stamped for the edge');
-        $this->assertStringNotContainsString('ec-class-Member', $tags);
+    /**
+     * Render a template string for a page while recording queries, and return the page's tags.
+     */
+    private function renderTags(Page $page, string $template, array $extra = []): array
+    {
+        // The test case runs as the default admin; a page served from the edge is anonymous.
+        Security::setCurrentUser(null);
+
+        $edge = EdgeCache::singleton();
+        $edge->reset();
+        $edge->startCollecting();
+        $controller = PageController::create(Page::get()->byID($page->ID));
+        $controller->setRequest(new HTTPRequest('GET', $page->URLSegment));
+        SSViewer::fromString($template)->process($controller, $extra);
+        $edge->stopCollecting();
+
+        return $edge->getTags();
     }
 }

@@ -29,7 +29,8 @@ class EdgeCacheSiteTreeExtension extends DataExtension
      * `ec-children-<id>`, so publishing a child purges it. Off by default, because a menu lists the
      * children of every top-level page: tagging those would make a content-only edit to any child
      * purge every page. Turn it on for a class whose children are shown elsewhere (a news holder
-     * listed on the home page):
+     * listed on the home page), and only when no menu reads its children: even `<% if $Children %>` in
+     * a menu item counts:
      *
      *     App\Pages\NewsHolder:
      *       edge_cache_tag_children: true

@@ -366,7 +366,7 @@ class EdgeCache
      * Note a class the page depends on without querying it (`edge_cache_depends_on`, a block behind
      * a partial cache, an element or page class with its own scheduled fields), so its scheduled
      * records are taken into account. The tag itself is added separately. Needed for a class the
-     * module never collects (pages, elements, files, members), and for any hook that adds a class
+     * module never collects (pages, elements, files), and for any hook that adds a class
      * tag with `updateEdgeCacheTags`.
      */
     public function declareClass(string $class): void
