@@ -41,7 +41,7 @@ Unticking the Settings box clears the cached pages straight away.
 A banner that shows between a start and an end time changes at a moment nothing publishes at, so no purge can catch it. A class lists its date fields and the edge lifetime of any page that listed it is cut to the time left until the next one:
 
 ```yaml
-Vendor\Notifications\Model\PopUp:
+App\Model\Banner:
   edge_cache_schedule_fields:
     - StartTime
     - EndTime

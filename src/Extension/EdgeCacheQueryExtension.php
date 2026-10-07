@@ -4,11 +4,13 @@ namespace Dynamic\EdgeCache\Extension;
 
 use Dynamic\EdgeCache\CollectionState;
 use Dynamic\EdgeCache\EdgeCache;
+use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\ORM\DataExtension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\DataQuery;
 use SilverStripe\ORM\Queries\SQLSelect;
 use SilverStripe\ORM\RelationList;
+use SilverStripe\SiteConfig\SiteConfig;
 
 /**
  * Tags a page with every class it queries while rendering, so a page that lists blog posts, staff
@@ -47,7 +49,9 @@ class EdgeCacheQueryExtension extends DataExtension
     /**
      * Purge when the members of a many_many list (plain or through) change, for whichever of the
      * record handing out the list and the class it lists uses EdgeCachePurgeable. The other side is
-     * the class as declared on the relation, so a subclass tag is not purged from there.
+     * the class as declared on the relation, so a subclass tag is not purged from there. A list of
+     * Settings records edited from the other side clears the site, as editing it from Settings does
+     * (EdgeCacheSiteConfigExtension).
      */
     public function updateManyManyComponents(RelationList $list): void
     {
@@ -57,11 +61,15 @@ class EdgeCacheQueryExtension extends DataExtension
                 $classes[$class] = $class;
             }
         }
-        if (!$classes) {
+        $settings = is_a($list->dataClass(), SiteConfig::class, true);
+        if (!$classes && !$settings) {
             return;
         }
 
-        $callback = function () use ($classes): void {
+        $callback = function () use ($classes, $settings): void {
+            if ($settings) {
+                PurgeQueue::singleton()->addEverything();
+            }
             foreach ($classes as $class) {
                 EdgeCachePurgeable::purgeClass($class);
             }

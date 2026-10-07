@@ -67,11 +67,13 @@ Vendor\Model\FooterLink:
 Adding, removing or clearing the records of a `many_many` relation writes only a join table, so no record event fires. A class that uses `EdgeCachePurgeable` also purges when a `many_many` list it belongs to changes (including `many_many` through), with the same setting as above: the class tag chain by default, the whole site for `edge_cache_purge: everything`.
 
 ```yaml
-Vendor\Model\NavigationGroup:
+App\Model\FooterLinkGroup:
   extensions:
     - Dynamic\EdgeCache\Extension\EdgeCachePurgeable
   edge_cache_purge: everything
 ```
+
+Lists held by Settings (`SiteConfig`), such as utility or footer links, need no declaration: adding, removing or reordering their members clears the whole site, as saving Settings does, whichever side of the relation is edited.
 
 It works from either side of the relation: ticking groups on a link purges for the group class when the group class opted in, whether or not the link class did. From the side that did not declare the relation, only the class as declared on the relation is purged, so a subclass tag of it is not.
 
