@@ -6,6 +6,7 @@ use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use SilverStripe\Assets\Dev\TestAssetStore;
 use SilverStripe\Assets\File;
+use SilverStripe\Assets\Folder;
 use SilverStripe\Versioned\Versioned;
 
 /**
@@ -83,6 +84,24 @@ class EdgeCacheFileExtensionTest extends EdgeCacheTestCase
         $file->doArchive();
 
         $this->assertContains($publicUrl, PurgeQueue::singleton()->pending()['urls']);
+    }
+
+    public function testArchivingAFolderPurgesTheUrlsOfTheFilesInIt(): void
+    {
+        $folder = Folder::create(['Name' => 'banners']);
+        $folder->write();
+        $folder->publishSingle();
+        $file = File::create(['ParentID' => $folder->ID]);
+        $file->setFromString('in a folder', 'banners/hero.txt');
+        $file->write();
+        $file->publishSingle();
+        $url = $file->getAbsoluteURL();
+        $this->assertStringContainsString('/banners/hero.txt', $url);
+        PurgeQueue::singleton()->reset();
+
+        $folder->doArchive();
+
+        $this->assertContains($url, PurgeQueue::singleton()->pending()['urls']);
     }
 
     public function testArchivingADraftOnlyFileQueuesNothing(): void

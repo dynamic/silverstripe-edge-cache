@@ -8,7 +8,7 @@ use SilverStripe\Core\Extension;
 use SilverStripe\Versioned\Versioned;
 
 /**
- * Purges a file's public URL when the file is published, replaced, unpublished or archived.
+ * Purges a file's public URL when the file is published, replaced, unpublished or archived, or deleted with its folder.
  *
  * Pages that show the file are not purged: a page references the file by URL, and the URL is what
  * a replacement changes. Cloudflare only caches static files its rules mark eligible, so this
@@ -24,9 +24,9 @@ class EdgeCacheFileExtension extends Extension
     }
 
     /**
-     * Unpublishing and archiving purge before they run. Afterwards the file is protected and its URL
-     * is a different, session-granted one, and an archived record has no ID left, so the public URL
-     * the edge holds can only be read while the Live record still exists.
+     * Unpublishing and archiving purge before they run. Afterwards the file is protected or deleted,
+     * and a protected file's URL is a different, session-granted one, so the public URL the edge holds
+     * can only be read while the Live record still exists.
      */
     public function onBeforeUnpublish(): void
     {
@@ -36,6 +36,18 @@ class EdgeCacheFileExtension extends Extension
     public function onBeforeArchive(): void
     {
         $this->purgeLiveUrl();
+    }
+
+    /**
+     * Deleting a folder deletes its Live children with a plain delete, which fires neither of the
+     * hooks above for them. A delete of the Live record is the one moment their public file is
+     * still there. Deletes of the Draft record are not what the edge serves.
+     */
+    public function onBeforeDelete(): void
+    {
+        if (Versioned::get_stage() === Versioned::LIVE) {
+            $this->queueUrl($this->owner);
+        }
     }
 
     protected function purgeLiveUrl(): void
