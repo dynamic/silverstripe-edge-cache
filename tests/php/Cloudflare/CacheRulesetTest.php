@@ -38,7 +38,14 @@ class CacheRulesetTest extends SapphireTest
     {
         $pages = (new CacheRuleset())->rules('example.com')[0];
 
-        $this->assertSame(['cache' => true, 'edge_ttl' => ['mode' => 'bypass_by_default']], $pages['action_parameters']);
+        $this->assertSame(
+            [
+                'cache' => true,
+                'edge_ttl' => ['mode' => 'bypass_by_default'],
+                'browser_ttl' => ['mode' => 'respect_origin'],
+            ],
+            $pages['action_parameters']
+        );
         $this->assertStringContainsString('not starts_with(http.request.uri.path, "/admin")', $pages['expression']);
     }
 
@@ -51,7 +58,9 @@ class CacheRulesetTest extends SapphireTest
         $this->assertStringContainsString('PHPSESSID', $rules[$ref('bypass-session')]['expression']);
         $this->assertStringContainsString('SECSESSID', $rules[$ref('bypass-session')]['expression']);
         $this->assertStringContainsString('text/markdown', $rules[$ref('bypass-markdown')]['expression']);
-        $this->assertStringContainsString('cf.client.bot', $rules[$ref('bypass-bots')]['expression']);
+        $this->assertStringContainsString('http.user_agent contains "GPTBot"', $rules[$ref('bypass-bots')]['expression']);
+        $this->assertStringContainsString('http.user_agent contains "ClaudeBot"', $rules[$ref('bypass-bots')]['expression']);
+        $this->assertStringNotContainsString('cf.client.bot', $rules[$ref('bypass-bots')]['expression'], 'rejected on Free');
         $this->assertSame(['cache' => false], $rules[$ref('bypass-bots')]['action_parameters']);
     }
 
@@ -121,6 +130,34 @@ class CacheRulesetTest extends SapphireTest
         $static = (new CacheRuleset())->rules('example.com')[1];
 
         $this->assertSame(86400, $static['action_parameters']['edge_ttl']['default']);
+    }
+
+    public function testThePagesRuleLeavesTheBrowserLifetimeToTheOrigin(): void
+    {
+        $pages = (new CacheRuleset())->rules('example.com')[0];
+
+        $this->assertSame(['mode' => 'respect_origin'], $pages['action_parameters']['browser_ttl']);
+        $this->assertSame(['mode' => 'bypass_by_default'], $pages['action_parameters']['edge_ttl']);
+    }
+
+    public function testNoCrawlersListedLeavesTheBotRuleOut(): void
+    {
+        CacheRuleset::config()->set('bot_user_agents', []);
+
+        $refs = array_column((new CacheRuleset())->rules('example.com'), 'ref');
+
+        $this->assertCount(4, $refs);
+        $this->assertNotContains('dynamic-edge-cache-example-com-bypass-bots', $refs);
+    }
+
+    public function testTheCrawlerListIsConfigurableAndEscaped(): void
+    {
+        CacheRuleset::config()->set('bot_user_agents', ['My"Bot']);
+
+        $rules = array_column((new CacheRuleset())->rules('example.com'), null, 'ref');
+
+        $expression = $rules['dynamic-edge-cache-example-com-bypass-bots']['expression'];
+        $this->assertStringContainsString('http.user_agent contains "My\\"Bot"', $expression);
     }
 
     public function testEachHostKeepsItsOwnRules(): void

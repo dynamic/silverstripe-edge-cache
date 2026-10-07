@@ -36,11 +36,11 @@ A failure prints to stderr and exits 1, so a script running the task can tell. T
 
 The task reads the zone's existing cache rules, keeps them, and adds five of its own after them (a rule that comes later wins when settings conflict). Rules 1, 3, 4 and 5 apply to page paths only: not `/admin`, `/Security`, `/dev`, `/_resources` or `/assets`.
 
-1. Pages: eligible for cache, lifetime from the origin header, bypass when the origin sends none.
+1. Pages: eligible for cache, lifetime from the origin header, bypass when the origin sends none. The browser lifetime is also left to the origin (`browser_ttl: respect_origin`); without it the zone's Browser Cache TTL (4 hours by default) replaces the origin's short `max-age` and browsers keep a page long after it is purged.
 2. `/_resources/`: cached for `static_edge_ttl` (1 day). Purge the prefix after a deploy that changes theme images, which carry no `?m=` cache-buster.
 3. Bypass for a `PHPSESSID` or `SECSESSID` cookie.
 4. Bypass when the request's `Accept` header asks for `text/markdown` (the edge keys on the URL alone and ignores `Vary: Accept`).
-5. Bypass for verified bots, so the origin sees them.
+5. Bypass for AI crawlers, matched by user agent (`CacheRuleset.bot_user_agents`), so the origin sees them and the aeo crawler log stays complete. Cache Rules reject `cf.client.bot` on the Free plan, so verified-bot matching is not available there; a spoofed user agent only gets an uncached page.
 
 Running it again for the same host changes nothing, and `remove=1` takes back only rules whose ref starts with `dynamic-edge-cache-`.
 

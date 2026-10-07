@@ -29,9 +29,35 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $this->assertSame([['tags', ['ec-page-1', 'ec-class-BlogPost']]], $this->adapter->calls);
     }
 
+    public function testPurgeUrlTakesAbsoluteUrls(): void
+    {
+        $this->runTask(['purge_url' => 'https://example.com/a.pdf, https://example.com/b.pdf']);
+
+        $this->assertSame(
+            [['urls', ['https://example.com/a.pdf', 'https://example.com/b.pdf']]],
+            $this->adapter->calls
+        );
+    }
+
+    public function testSakesOwnUrlVariableIsNotMistakenForAUrlToPurge(): void
+    {
+        // sake sets `url` to the task's path; it once went to the CDN as a URL to purge.
+        $out = $this->runTask(['everything' => '1', 'url' => 'dev/tasks/edge-cache-purge']);
+
+        $this->assertSame([['everything', []]], $this->adapter->calls);
+        $this->assertStringNotContainsString('urls', $out);
+    }
+
+    public function testAnAbsoluteUrlGivenAsUrlStillWorks(): void
+    {
+        $this->runTask(['url' => 'https://example.com/a.pdf']);
+
+        $this->assertSame([['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
+    }
+
     public function testEverythingAndUrlsAreBothSent(): void
     {
-        $this->runTask(['everything' => '1', 'url' => 'https://example.com/a.pdf']);
+        $this->runTask(['everything' => '1', 'purge_url' => 'https://example.com/a.pdf']);
 
         $this->assertSame([['everything', []], ['urls', ['https://example.com/a.pdf']]], $this->adapter->calls);
     }

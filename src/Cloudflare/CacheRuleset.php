@@ -57,6 +57,21 @@ class CacheRuleset
     private static $static_browser_ttl = 86400;
 
     /**
+     * User-agent tokens of crawlers that bypass the cache, so the origin sees them (the aeo
+     * crawler log). `cf.client.bot` would match verified bots, but Cache Rules reject it on the
+     * Free plan, so crawlers are matched by user agent. An empty list leaves the rule out.
+     *
+     * @config
+     * @var string[]
+     */
+    private static $bot_user_agents = [
+        'Amazonbot', 'Amzn-SearchBot', 'Amzn-User', 'Applebot-Extended', 'CCBot', 'ChatGPT-User',
+        'Claude-SearchBot', 'Claude-User', 'ClaudeBot', 'DuckAssistBot', 'GPTBot', 'Meta-ExternalAgent',
+        'Meta-ExternalFetcher', 'Meta-WebIndexer', 'MistralAI-Index', 'MistralAI-Training',
+        'MistralAI-User', 'OAI-SearchBot', 'Perplexity-User', 'PerplexityBot',
+    ];
+
+    /**
      * Paths pages never cache, matched as prefixes.
      *
      * @config
@@ -81,13 +96,19 @@ class CacheRuleset
         // files the static rule caches, or paths the zone's other rules handle.
         $onPages = sprintf('%s and %s', $onHost, implode(' and ', $excluded));
 
-        return [
+        return array_merge([
             $this->rule(
                 $rawHost,
                 'pages',
                 'Cache HTML pages the origin marks cacheable',
                 sprintf('(%s)', $onPages),
-                ['cache' => true, 'edge_ttl' => ['mode' => 'bypass_by_default']]
+                [
+                    'cache' => true,
+                    'edge_ttl' => ['mode' => 'bypass_by_default'],
+                    // Without this the zone's Browser Cache TTL (4 hours by default) replaces the
+                    // origin's short max-age, and browsers keep a page long after it is purged.
+                    'browser_ttl' => ['mode' => 'respect_origin'],
+                ]
             ),
             $this->rule(
                 $rawHost,
@@ -117,14 +138,31 @@ class CacheRuleset
                 sprintf('(%s and any(http.request.headers["accept"][*] contains "text/markdown"))', $onPages),
                 ['cache' => false]
             ),
-            $this->rule(
-                $rawHost,
-                'bypass-bots',
-                'Bypass for verified bots so the origin sees them',
-                sprintf('(%s and cf.client.bot)', $onPages),
-                ['cache' => false]
-            ),
-        ];
+        ], $this->botRule($rawHost, $onPages));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>> the bot bypass rule, or none when no crawlers are listed
+     */
+    protected function botRule(string $rawHost, string $onPages): array
+    {
+        $agents = array_values(array_filter((array) static::config()->get('bot_user_agents')));
+        if (!$agents) {
+            return [];
+        }
+
+        $match = implode(' or ', array_map(
+            fn ($agent) => sprintf('http.user_agent contains "%s"', $this->quote((string) $agent)),
+            $agents
+        ));
+
+        return [$this->rule(
+            $rawHost,
+            'bypass-bots',
+            'Bypass for AI crawlers (by user agent) so the origin sees them',
+            sprintf('(%s and (%s))', $onPages, $match),
+            ['cache' => false]
+        )];
     }
 
     /**
