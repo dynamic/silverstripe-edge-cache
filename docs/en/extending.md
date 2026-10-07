@@ -27,6 +27,7 @@ The module sees database queries made while the page renders. These cases need a
   private static $edge_cache_depends_on = [SiteTree::class];
   ```
 
+- **Scheduled start and end times.** A banner or post that appears or disappears at a set time is handled by listing its date fields in `edge_cache_schedule_fields` (see [Configuration](configuration.md#scheduled-records)). Without that, it can be up to `edge_ttl` late.
 - **Content behind a partial or application cache.** A `<% cached %>` block or a PSR-16 cache that serves a listing runs no query while it is warm, so the page is stamped without that class tag. Declare the dependency with `edge_cache_depends_on` (or an `updateEdgeCacheTags` hook) for any such block.
 - **`edge_cache_purge` lists.** Entries add class tags to the purge, but only pages that queried or declared that class carry them. A page class named in the list that never queried it is not purged.
 

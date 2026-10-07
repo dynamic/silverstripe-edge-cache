@@ -67,6 +67,7 @@ class EdgeCacheControllerExtension extends Extension
 
             foreach ((array) $record->config()->get('edge_cache_depends_on') as $class) {
                 $tags[] = EdgeCache::classTag($class);
+                EdgeCache::singleton()->declareClass($class);
             }
 
             $tags = array_merge($tags, $this->elementTags($record));

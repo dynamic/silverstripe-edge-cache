@@ -8,6 +8,7 @@ All keys are Silverstripe config on `Dynamic\EdgeCache\EdgeCache` unless noted.
 | `edge_ttl` | `21600` | Seconds the edge keeps a page (6 hours). Publishing purges what the module can see; this is the backstop for the rest (see [Extending](extending.md#whats-not-tracked)). Raise it once a site's listings are covered |
 | `stale_while_revalidate` | `60` | Seconds the edge may serve a stale copy while it refetches |
 | `stale_if_error` | `86400` | Seconds the edge may serve a stale copy when the origin errors |
+| `schedule_ttl_floor` | `60` | Shortest edge lifetime a scheduled start or end time may force (see [Scheduled records](#scheduled-records)) |
 | `browser_max_age` | `60` | Seconds a browser keeps a page. Short, because browsers cannot be purged |
 | `max_tags` | `150` | Most cache tags on one page. A page over the limit is served from the origin as `private` and a warning is logged once an hour per URL |
 | `auto_tag_ignore` | `SiteTree`, `Page`, `DataObject` | Classes whose queries never become tags (exact match) |
@@ -34,6 +35,23 @@ All of these must hold:
 A page the controller made public that fails 7 or 8 is changed to `private, must-revalidate`, so a public header never leaves without edge handling behind it.
 
 Unticking the Settings box clears the cached pages straight away.
+
+## Scheduled records
+
+A banner that shows between a start and an end time changes at a moment nothing publishes at, so no purge can catch it. A class lists its date fields and the edge lifetime of any page that listed it is cut to the time left until the next one:
+
+```yaml
+Vendor\Notifications\Model\PopUp:
+  edge_cache_schedule_fields:
+    - StartTime
+    - EndTime
+```
+
+Both ends count: one makes a record appear, the other makes it disappear. The earliest future value across every record of the class wins (the page may not show that record; a boundary coming is enough), and a subclass inherits the fields. Date and Datetime fields work; a Date changes at midnight. A page that does not query the class, and does not list it in `edge_cache_depends_on`, is not affected. The cap only ever shortens `edge_ttl`.
+
+A boundary that is closer than `schedule_ttl_floor` uses the floor instead, so a page is not re-rendered on every request as a boundary nears. A banner can therefore show up to the floor, plus `stale_while_revalidate`, late. A listed field the class does not have is logged as a warning and the page is cached for the floor only.
+
+One extra query per configured field runs when the origin renders a cacheable page; a cached page costs none.
 
 ## What gets purged
 
