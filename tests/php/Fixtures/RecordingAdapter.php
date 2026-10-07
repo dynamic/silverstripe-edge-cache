@@ -18,6 +18,8 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
 
     public bool $fail = false;
 
+    public bool $returnFalse = false;
+
     public function isConfigured(): bool
     {
         return true;
@@ -65,6 +67,6 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
         }
         $this->calls[] = [$what, $items];
 
-        return true;
+        return !$this->returnFalse;
     }
 }

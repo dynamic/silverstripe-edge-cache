@@ -44,7 +44,7 @@ class EdgeCacheMiddlewareTest extends EdgeCacheTestCase
     {
         $response = $this->respond();
 
-        $this->assertSame('max-age=86400', $response->getHeader('Edge-Cache-Control'));
+        $this->assertSame('max-age=21600', $response->getHeader('Edge-Cache-Control'));
         $this->assertSame('ec-site,ec-page-7,ec-class-AboutPage', $response->getHeader('Cache-Tag'));
         $this->assertSame('public, max-age=60, must-revalidate', $response->getHeader('Cache-Control'));
     }

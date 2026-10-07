@@ -15,5 +15,7 @@ class ListedThing extends DataObject implements TestOnly
 
     private static $db = ['Title' => 'Varchar'];
 
+    private static $has_one = ['Owner' => ListedOwner::class];
+
     private static $extensions = [Versioned::class];
 }

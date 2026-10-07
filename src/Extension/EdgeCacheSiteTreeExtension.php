@@ -84,7 +84,7 @@ class EdgeCacheSiteTreeExtension extends DataExtension
             return;
         }
 
-        $tags = array_merge([EdgeCache::pageTag($owner->ID)], EdgeCache::classChainTags($owner->ClassName));
+        $tags = array_merge([EdgeCache::pageTag($owner->ID)], EdgeCache::classChainTags(get_class($owner)));
         foreach ($this->ancestorIds() as $id) {
             $tags[] = EdgeCache::pageTag($id);
         }

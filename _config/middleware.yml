@@ -9,3 +9,13 @@ SilverStripe\Core\Injector\Injector:
     properties:
       Middlewares:
         EdgeCacheMiddleware: '%$Dynamic\EdgeCache\Middleware\EdgeCacheMiddleware'
+---
+Name: dynamic-edgecache-cache
+---
+# Throttles the "page is over the tag limit" warning to once an hour per URL.
+SilverStripe\Core\Injector\Injector:
+  Psr\SimpleCache\CacheInterface.EdgeCache:
+    factory: SilverStripe\Core\Cache\CacheFactory
+    constructor:
+      namespace: 'EdgeCache'
+      defaultLifetime: 3600

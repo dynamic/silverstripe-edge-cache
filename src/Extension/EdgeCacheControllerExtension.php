@@ -50,6 +50,7 @@ class EdgeCacheControllerExtension extends Extension
         );
 
         $edge->markCacheable();
+        $edge->setCurrentPageId((int) $this->owner->data()->ID);
         $edge->addTags($this->tags());
     }
 

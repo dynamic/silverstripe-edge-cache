@@ -74,7 +74,7 @@ class EdgeCachePurgeable extends DataExtension
         }
 
         // Pages that listed records of this class carry its class tag, so purge that.
-        $tags = EdgeCache::classChainTags($this->owner->ClassName);
+        $tags = EdgeCache::classChainTags(get_class($this->owner));
         foreach ((array) $setting as $class) {
             $tags[] = EdgeCache::classTag($class);
         }

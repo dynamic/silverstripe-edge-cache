@@ -100,22 +100,54 @@ class PurgeQueue
             return;
         }
 
+        $failed = [];
         try {
             $adapter = $edge->adapter();
             if ($pending['everything']) {
-                $adapter->purgeEverything();
-
-                return;
-            }
-            if ($pending['tags']) {
-                $adapter->purgeTags($pending['tags']);
-            }
-            if ($pending['urls']) {
-                $adapter->purgeUrls($pending['urls']);
+                if (!$adapter->purgeEverything()) {
+                    $failed[] = 'everything';
+                }
+            } else {
+                if ($pending['tags'] && !$adapter->purgeTags($pending['tags'])) {
+                    $failed[] = 'tags';
+                }
+                if ($pending['urls'] && !$adapter->purgeUrls($pending['urls'])) {
+                    $failed[] = 'urls';
+                }
             }
         } catch (Throwable $e) {
             // A failed purge must never break a publish.
-            Injector::inst()->get(LoggerInterface::class)->error('Edge cache purge failed: ' . $e->getMessage());
+            $this->logFailure($pending, ['exception' => $e::class . ': ' . $e->getMessage()]);
+
+            return;
+        }
+
+        if ($failed) {
+            $this->logFailure($pending, ['failed' => $failed]);
+        }
+    }
+
+    /**
+     * The purge did not reach the CDN, so pages that changed stay cached until their edge lifetime
+     * ends. Record what was lost so it can be purged by hand (edge-cache-purge).
+     *
+     * @param array{everything: bool, tags: string[], urls: string[]} $pending
+     * @param array<string, mixed> $context
+     */
+    protected function logFailure(array $pending, array $context): void
+    {
+        try {
+            Injector::inst()->get(LoggerInterface::class)->error(
+                'Edge cache purge did not complete; changed pages stay cached until the edge lifetime ends. '
+                . 'Purge by hand with: sake dev/tasks/edge-cache-purge',
+                $context + [
+                    'everything' => $pending['everything'],
+                    'tags' => array_slice($pending['tags'], 0, 30),
+                    'urls' => array_slice($pending['urls'], 0, 30),
+                ]
+            );
+        } catch (Throwable) {
+            // The logger itself failed; there is nowhere left to report to.
         }
     }
 

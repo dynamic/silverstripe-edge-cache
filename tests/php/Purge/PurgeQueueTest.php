@@ -4,7 +4,11 @@ namespace Dynamic\EdgeCache\Tests\Purge;
 
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
+use Psr\Log\LoggerInterface;
 use SilverStripe\Core\Environment;
+use SilverStripe\Core\Injector\Injector;
 
 class PurgeQueueTest extends EdgeCacheTestCase
 {
@@ -59,8 +63,46 @@ class PurgeQueueTest extends EdgeCacheTestCase
         $this->assertTrue(PurgeQueue::singleton()->isEmpty());
     }
 
-    public function testAFailingCdnDoesNotThrow(): void
+    public function testAFailingCdnDoesNotThrowAndTheLossIsLoggedWithWhatWasLost(): void
     {
+        $handler = new TestHandler();
+        Injector::inst()->registerService(new Logger('test', [$handler]), LoggerInterface::class);
+        $this->adapter->fail = true;
+        PurgeQueue::singleton()->addTags('ec-page-1');
+
+        PurgeQueue::singleton()->flush();
+
+        $this->assertTrue(PurgeQueue::singleton()->isEmpty());
+        $this->assertTrue($handler->hasErrorThatContains('Edge cache purge did not complete'));
+        $record = $handler->getRecords()[0];
+        $this->assertSame(['ec-page-1'], $record['context']['tags']);
+        $this->assertStringContainsString('CDN down', $record['context']['exception']);
+    }
+
+    public function testAnAdapterThatReportsFailureIsLoggedToo(): void
+    {
+        $handler = new TestHandler();
+        Injector::inst()->registerService(new Logger('test', [$handler]), LoggerInterface::class);
+        $this->adapter->returnFalse = true;
+        PurgeQueue::singleton()->addEverything();
+
+        PurgeQueue::singleton()->flush();
+
+        $this->assertTrue($handler->hasErrorThatContains('Edge cache purge did not complete'));
+        $this->assertSame(['everything'], $handler->getRecords()[0]['context']['failed']);
+    }
+
+    public function testAThrowingLoggerDoesNotBreakAPublish(): void
+    {
+        Injector::inst()->registerService(
+            new class extends \Psr\Log\AbstractLogger {
+                public function log($level, $message, array $context = []): void
+                {
+                    throw new \RuntimeException('log stream unwritable');
+                }
+            },
+            LoggerInterface::class
+        );
         $this->adapter->fail = true;
         PurgeQueue::singleton()->addTags('ec-page-1');
 
