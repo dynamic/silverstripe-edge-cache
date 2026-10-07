@@ -67,6 +67,13 @@ class EdgeCacheControllerExtension extends Extension
 
             foreach ((array) $record->config()->get('edge_cache_depends_on') as $class) {
                 $tags[] = EdgeCache::classTag($class);
+                EdgeCache::singleton()->declareClass($class);
+            }
+
+            // A page with its own start or end time (`edge_cache_schedule_fields`): pages are never
+            // collected as a class, so it is declared.
+            if ($record->config()->get('edge_cache_schedule_fields')) {
+                EdgeCache::singleton()->declareClass(get_class($record));
             }
 
             $tags = array_merge($tags, $this->elementTags($record));

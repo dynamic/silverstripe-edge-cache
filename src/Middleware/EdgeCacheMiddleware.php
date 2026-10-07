@@ -4,6 +4,7 @@ namespace Dynamic\EdgeCache\Middleware;
 
 use Dynamic\EdgeCache\CollectionState;
 use Dynamic\EdgeCache\EdgeCache;
+use Dynamic\EdgeCache\Schedule\ScheduleWindows;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Control\HTTPRequest;
@@ -144,6 +145,7 @@ class EdgeCacheMiddleware implements HTTPMiddleware
 
     protected function stamp(EdgeCache $edge, HTTPResponse $response): void
     {
+        $this->capForSchedule($edge);
         $adapter = $edge->adapter();
 
         foreach ($adapter->edgeHeaders($edge->policy()) as $name => $value) {
@@ -157,6 +159,37 @@ class EdgeCacheMiddleware implements HTTPMiddleware
 
         if (($allowed = $adapter->allowedVary()) !== null) {
             $this->restrictVary($response, $allowed);
+        }
+    }
+
+    /**
+     * Stop the edge keeping the page past the next start or end time of a scheduled record it
+     * lists (`edge_cache_schedule_fields`). If the lookup fails the page is still cached, for the
+     * shortest lifetime, rather than for one that could outlast a window.
+     */
+    protected function capForSchedule(EdgeCache $edge): void
+    {
+        try {
+            $seconds = ScheduleWindows::singleton()->secondsUntilNextChange($edge->collectedClasses());
+        } catch (Throwable $e) {
+            $this->warnSchedule($e);
+            $seconds = 0;
+        }
+
+        if ($seconds !== null) {
+            $edge->capEdgeTtl($seconds);
+        }
+    }
+
+    protected function warnSchedule(Throwable $e): void
+    {
+        try {
+            Injector::inst()->get(LoggerInterface::class)->warning(
+                'Edge cache could not read scheduled start and end times, so the page is cached for '
+                . 'the shortest lifetime: ' . $e->getMessage()
+            );
+        } catch (Throwable) {
+            // Logging must not break a page that rendered fine.
         }
     }
 

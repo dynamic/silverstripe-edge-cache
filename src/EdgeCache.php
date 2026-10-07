@@ -75,6 +75,16 @@ class EdgeCache
     private static $browser_max_age = 60;
 
     /**
+     * Shortest edge lifetime a scheduled start or end time may force (see `edge_cache_schedule_fields`).
+     * A window about to open or close within this many seconds can show up to this late, which
+     * avoids a page that is re-rendered on every request as a boundary approaches.
+     *
+     * @config
+     * @var int
+     */
+    private static $schedule_ttl_floor = 60;
+
+    /**
      * Most tags one page may carry. A page that would carry more is not edge-cached: a truncated
      * tag set would leave it out of purges it needs.
      *
@@ -150,6 +160,33 @@ class EdgeCache
      */
     private array $tags = [];
 
+    /**
+     * The class each automatic tag was collected for, so scheduled fields can be looked up on it.
+     *
+     * @var array<string, string>
+     */
+    private array $tagClasses = [];
+
+    /**
+     * Classes the page queried whose tag was already on it (declared, or the same short name from
+     * another namespace), so no entry in $tagClasses. Their scheduled fields still count.
+     *
+     * @var array<string, true>
+     */
+    private array $seenClasses = [];
+
+    /**
+     * Classes a page declared a dependency on (`edge_cache_depends_on`).
+     *
+     * @var array<string, true>
+     */
+    private array $declaredClasses = [];
+
+    /**
+     * Seconds until the next start or end time of a scheduled record the page lists, if any.
+     */
+    private ?int $ttlCap = null;
+
     public function adapter(): EdgeCacheAdapter
     {
         return Injector::inst()->get(EdgeCacheAdapter::class);
@@ -157,8 +194,13 @@ class EdgeCache
 
     public function policy(): EdgePolicy
     {
+        $ttl = (int) static::config()->get('edge_ttl');
+        if ($this->ttlCap !== null) {
+            $ttl = min($ttl, max((int) static::config()->get('schedule_ttl_floor'), $this->ttlCap));
+        }
+
         return new EdgePolicy(
-            (int) static::config()->get('edge_ttl'),
+            $ttl,
             (int) static::config()->get('stale_while_revalidate'),
             (int) static::config()->get('stale_if_error')
         );
@@ -300,9 +342,12 @@ class EdgeCache
 
         $tag = self::classTag($class);
         if (isset($this->tags[$tag])) {
+            $this->seenClasses[ltrim($class, '\\')] = true;
+
             return null;
         }
         $this->addTags($tag);
+        $this->tagClasses[$tag] = ltrim($class, '\\');
 
         return $tag;
     }
@@ -312,7 +357,50 @@ class EdgeCache
      */
     public function forgetTag(string $tag): void
     {
-        unset($this->tags[$tag]);
+        unset($this->tags[$tag], $this->tagClasses[$tag]);
+    }
+
+    /**
+     * Note a class the page depends on without querying it (`edge_cache_depends_on`, a block behind
+     * a partial cache, an element or page class with its own scheduled fields), so its scheduled
+     * records are taken into account. The tag itself is added separately. Needed for a class the
+     * module never collects (pages, elements, files, members), and for any hook that adds a class
+     * tag with `updateEdgeCacheTags`.
+     */
+    public function declareClass(string $class): void
+    {
+        $this->declaredClasses[ltrim($class, '\\')] = true;
+    }
+
+    /**
+     * Cap the edge lifetime at the time left until a scheduled record starts or ends. Several caps
+     * keep the shortest.
+     */
+    public function capEdgeTtl(int $seconds): void
+    {
+        $this->ttlCap = $this->ttlCap === null ? $seconds : min($this->ttlCap, $seconds);
+    }
+
+    /**
+     * The classes whose records this page shows: the ones its queries and declarations named, with
+     * the same lazy-load exclusion as the tags.
+     *
+     * @return string[]
+     */
+    public function collectedClasses(): array
+    {
+        $classes = array_merge(
+            array_values($this->tagClasses),
+            array_keys($this->seenClasses),
+            array_keys($this->declaredClasses)
+        );
+        foreach ($this->lazyClasses as $class => $ids) {
+            if ($ids !== [$this->currentPageId => true]) {
+                $classes[] = $class;
+            }
+        }
+
+        return array_values(array_unique($classes));
     }
 
     /**
@@ -383,6 +471,10 @@ class EdgeCache
     {
         $this->cacheable = false;
         $this->tags = [];
+        $this->tagClasses = [];
+        $this->seenClasses = [];
+        $this->declaredClasses = [];
+        $this->ttlCap = null;
         $this->lazyClasses = [];
         $this->currentPageId = 0;
         CollectionState::set(false);

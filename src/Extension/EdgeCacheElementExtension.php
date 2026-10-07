@@ -59,8 +59,16 @@ class EdgeCacheElementExtension extends DataExtension
     public function edgeCacheTags(): array
     {
         $tags = [];
+        $edge = EdgeCache::singleton();
         foreach ((array) $this->owner->config()->get('edge_cache_depends_on') as $class) {
             $tags[] = EdgeCache::classTag($class);
+            $edge->declareClass($class);
+        }
+
+        // An element that shows itself between a start and an end time (`edge_cache_schedule_fields`)
+        // is a class the module never collects, so say so here.
+        if ($this->owner->config()->get('edge_cache_schedule_fields')) {
+            $edge->declareClass(get_class($this->owner));
         }
 
         return $tags;

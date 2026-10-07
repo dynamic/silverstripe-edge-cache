@@ -80,6 +80,27 @@ class EdgeCacheControllerExtensionTest extends EdgeCacheTestCase
         $this->assertContains('ec-class-SiteTree', EdgeCache::singleton()->getTags());
     }
 
+    public function testADeclaredDependencyIsRememberedForScheduledFields(): void
+    {
+        Page::config()->set('edge_cache_depends_on', [\Dynamic\EdgeCache\Tests\Fixtures\ScheduledThing::class]);
+
+        $this->init();
+
+        $this->assertContains(
+            \Dynamic\EdgeCache\Tests\Fixtures\ScheduledThing::class,
+            EdgeCache::singleton()->collectedClasses()
+        );
+    }
+
+    public function testAPageWithItsOwnScheduledFieldsDeclaresItsClass(): void
+    {
+        Page::config()->set('edge_cache_schedule_fields', ['LastEdited']);
+
+        $this->init();
+
+        $this->assertContains(Page::class, EdgeCache::singleton()->collectedClasses());
+    }
+
     public function testNothingHappensOutsideLive(): void
     {
         Environment::setEnv('SS_ENVIRONMENT_TYPE', 'dev');
