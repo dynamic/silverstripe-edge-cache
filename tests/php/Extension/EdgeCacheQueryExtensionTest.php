@@ -394,4 +394,22 @@ class EdgeCacheQueryExtensionTest extends EdgeCacheTestCase
         $edge->stopCollecting();
         $this->assertContains('ec-class-ListedPage', $edge->getTags(), 'a listed record is');
     }
+
+    public function testASiteCanIgnoreItsPageBaseClassSoNavigationDoesNotTieEveryPageToIt(): void
+    {
+        $edge = EdgeCache::singleton();
+        $edge->reset();
+        $edge->startCollecting();
+        $edge->setCurrentPageId(1);
+        $edge->collectLazyClass(ListedPage::class, 9);
+        $this->assertContains('ec-class-ListedPage', $edge->getTags(), 'tagged by default');
+
+        EdgeCache::config()->merge('auto_tag_ignore_descendants', [ListedPage::class]);
+        $edge->reset();
+        $edge->startCollecting();
+        $edge->setCurrentPageId(1);
+        $edge->collectLazyClass(ListedPage::class, 9);
+
+        $this->assertNotContains('ec-class-ListedPage', $edge->getTags());
+    }
 }
