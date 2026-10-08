@@ -5,6 +5,8 @@ namespace Dynamic\EdgeCache\Extension;
 use Dynamic\EdgeCache\CollectionState;
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
+use SilverStripe\CMS\Model\SiteTree;
+use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\DataQuery;
@@ -25,12 +27,23 @@ use SilverStripe\SiteConfig\SiteConfig;
  * (every blog post would otherwise be tied to every other blog post). When it is some other record,
  * such as a listed post whose summary the template reads, it is.
  *
- * It also hooks many_many lists for EdgeCachePurgeable: a join write fires no record event, so the
- * list's add/remove callbacks purge instead. Applied here because the list can be edited from either
- * side of the relation, and the class that opted in may be the other one.
+ * It also hooks many_many lists: a join write fires no record event, so the list's add/remove
+ * callbacks purge instead, for EdgeCachePurgeable and for the pages and elements on either end of
+ * the list. Applied here because the list can be edited from either side of the relation, and the
+ * class that opted in may be the other one.
  */
 class EdgeCacheQueryExtension extends Extension
 {
+    /**
+     * Join tables of lists Silverstripe rewrites on every save of a record that holds links or
+     * images in its content (link and file tracking). They say nothing about what a page shows, so
+     * changing them purges nothing.
+     *
+     * @config
+     * @var string[]
+     */
+    private static $ignored_join_tables = ['SiteTreeLink', 'FileLink'];
+
     public function augmentLoadLazyFields(SQLSelect $query, DataQuery $dataQuery, DataObject $dataObject): void
     {
         if (!EdgeCache::isCollecting()) {
@@ -54,6 +67,9 @@ class EdgeCacheQueryExtension extends Extension
      * Settings records edited from the other side clears the site, as editing it from Settings does
      * (EdgeCacheSiteConfigExtension). A list of members, or any list a member hands out (a group's
      * members, a member's groups), purges the pages that listed members.
+     *
+     * A page or an element on either end of the list purges the pages that show it, with no opt-in:
+     * the join table is not versioned, so the change is live without a publish.
      */
     public function updateManyManyComponents(RelationList $list): void
     {
@@ -66,11 +82,12 @@ class EdgeCacheQueryExtension extends Extension
         $settings = is_a($list->dataClass(), SiteConfig::class, true);
         $memberClass = is_a($list->dataClass(), Member::class, true) ? $list->dataClass() : null;
         $memberClass ??= $this->owner instanceof Member ? get_class($this->owner) : null;
-        if (!$classes && !$settings && !$memberClass) {
+        $showing = $this->pagesShowingListed($list);
+        if (!$classes && !$settings && !$memberClass && !$showing) {
             return;
         }
 
-        $callback = function () use ($classes, $settings, $memberClass): void {
+        $callback = function ($list = null, $changed = null) use ($classes, $settings, $memberClass, $showing): void {
             if ($settings) {
                 PurgeQueue::singleton()->addEverything();
             }
@@ -80,9 +97,84 @@ class EdgeCacheQueryExtension extends Extension
             foreach ($classes as $class) {
                 EdgeCachePurgeable::purgeClass($class);
             }
+            if ($showing) {
+                $showing($this->changedIds($list, $changed));
+            }
         };
         $list->addCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
         $list->removeCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
+    }
+
+    /**
+     * What to purge when the list's members change because a page or an element is on one end of
+     * it: the list's owner when it is one, and the members the change touched when the list holds
+     * them. Null when neither end is a page or an element, or for a list core rewrites on its own.
+     *
+     * @return callable(int[]): void|null
+     */
+    private function pagesShowingListed(RelationList $list): ?callable
+    {
+        $joinTable = method_exists($list, 'getJoinTable') ? $list->getJoinTable() : null;
+        if ($joinTable && in_array($joinTable, (array) Config::inst()->get(static::class, 'ignored_join_tables'), true)) {
+            return null;
+        }
+
+        $owner = $this->owner;
+        $ownerIsPage = $owner instanceof SiteTree;
+        $ownerIsElement = $owner->hasExtension(EdgeCacheElementExtension::class);
+        $listedClass = $list->dataClass();
+        $listsPages = is_a($listedClass, SiteTree::class, true);
+        $listsElements = singleton($listedClass)->hasExtension(EdgeCacheElementExtension::class);
+        if (!$ownerIsPage && !$ownerIsElement && !$listsPages && !$listsElements) {
+            return null;
+        }
+
+        return function (array $changedIds) use (
+            $owner,
+            $ownerIsPage,
+            $ownerIsElement,
+            $listedClass,
+            $listsPages,
+            $listsElements
+        ): void {
+            if ($ownerIsPage) {
+                PurgeQueue::singleton()->addTags(EdgeCache::pageTag((int) $owner->ID));
+            } elseif ($ownerIsElement) {
+                $owner->purgeOwnerPage();
+            }
+
+            if ($listsPages) {
+                PurgeQueue::singleton()->addTags(array_map([EdgeCache::class, 'pageTag'], $changedIds));
+            } elseif ($listsElements && $changedIds) {
+                foreach ($listedClass::get()->byIDs($changedIds) as $element) {
+                    // Provided by EdgeCacheElementExtension, checked above.
+                    $element->purgeOwnerPage(); // @phpstan-ignore method.notFound
+                }
+            }
+        };
+    }
+
+    /**
+     * The IDs a list callback was told about: the record added, the IDs removed, or, for a reorder,
+     * which names no record, every member of the list.
+     *
+     * @param mixed $list
+     * @param mixed $changed a record, a record ID, or an array of IDs
+     * @return int[]
+     */
+    private function changedIds($list, $changed): array
+    {
+        if (is_array($changed)) {
+            return array_map('intval', $changed);
+        }
+        if ($changed instanceof DataObject) {
+            return [(int) $changed->ID];
+        }
+        if (is_numeric($changed)) {
+            return [(int) $changed];
+        }
+
+        return $list instanceof RelationList ? array_map('intval', $list->column('ID')) : [];
     }
 
     public function augmentSQL(SQLSelect $query, ?DataQuery $dataQuery = null): void
