@@ -6,6 +6,7 @@ use Dynamic\EdgeCache\CollectionState;
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\CMS\Model\SiteTree;
+use SilverStripe\CMS\Model\VirtualPage;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Extension;
 use SilverStripe\ORM\DataObject;
@@ -98,7 +99,7 @@ class EdgeCacheQueryExtension extends Extension
                 EdgeCachePurgeable::purgeClass($class);
             }
             if ($showing) {
-                $showing($this->changedIds($list, $changed));
+                $showing($this->changedIds($list, $changed), $list);
             }
         };
         $list->addCallbacks()->add($callback, EdgeCachePurgeable::RELATION_CALLBACK);
@@ -110,7 +111,7 @@ class EdgeCacheQueryExtension extends Extension
      * it: the list's owner when it is one, and the members the change touched when the list holds
      * them. Null when neither end is a page or an element, or for a list core rewrites on its own.
      *
-     * @return callable(int[]): void|null
+     * @return callable(int[], mixed): void|null
      */
     private function pagesShowingListed(RelationList $list): ?callable
     {
@@ -129,7 +130,10 @@ class EdgeCacheQueryExtension extends Extension
             return null;
         }
 
-        return function (array $changedIds) use (
+        return function (
+            array $changedIds,
+            $changedList
+        ) use (
             $owner,
             $ownerIsPage,
             $ownerIsElement,
@@ -137,21 +141,51 @@ class EdgeCacheQueryExtension extends Extension
             $listsPages,
             $listsElements
         ): void {
+            // A list handed out by a singleton (DataList::relation()) carries the owners' IDs, set
+            // after this extension sees it, and the record has none.
+            $ownerIds = $owner->exists() || !$changedList instanceof RelationList
+                ? [(int) $owner->ID]
+                : array_map('intval', (array) $changedList->getForeignID());
             if ($ownerIsPage) {
-                PurgeQueue::singleton()->addTags(EdgeCache::pageTag((int) $owner->ID));
+                $this->purgePages($ownerIds);
             } elseif ($ownerIsElement) {
-                $owner->purgeOwnerPage();
+                $elements = $owner->exists() ? [$owner] : $owner::get()->byIDs($ownerIds);
+                foreach ($elements as $element) {
+                    // Provided by EdgeCacheElementExtension, checked above.
+                    $element->purgeOwnerPage();
+                }
             }
 
             if ($listsPages) {
-                PurgeQueue::singleton()->addTags(array_map([EdgeCache::class, 'pageTag'], $changedIds));
+                $this->purgePages($changedIds);
             } elseif ($listsElements && $changedIds) {
                 foreach ($listedClass::get()->byIDs($changedIds) as $element) {
-                    // Provided by EdgeCacheElementExtension, checked above.
                     $element->purgeOwnerPage(); // @phpstan-ignore method.notFound
                 }
             }
         };
+    }
+
+    /**
+     * Purge pages by ID, and the virtual pages that copy them: a virtual page renders its source's
+     * lists but is tagged only with its own ID, and a list change republishes nothing.
+     *
+     * @param int[] $pageIds
+     */
+    private function purgePages(array $pageIds): void
+    {
+        $pageIds = array_filter($pageIds);
+        if (!$pageIds) {
+            return;
+        }
+
+        if (class_exists(VirtualPage::class)) {
+            $pageIds = array_merge(
+                $pageIds,
+                array_map('intval', VirtualPage::get()->filter('CopyContentFromID', $pageIds)->column('ID'))
+            );
+        }
+        PurgeQueue::singleton()->addTags(array_map([EdgeCache::class, 'pageTag'], array_unique($pageIds)));
     }
 
     /**

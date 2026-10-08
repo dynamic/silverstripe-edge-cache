@@ -14,6 +14,7 @@ use Dynamic\EdgeCache\Tests\Fixtures\OwnedRelationPage;
 use Dynamic\EdgeCache\Tests\Fixtures\PlainJoinOwner;
 use Page;
 use ReflectionMethod;
+use SilverStripe\CMS\Model\VirtualPage;
 use SilverStripe\Versioned\Versioned;
 use Symbiote\GridFieldExtensions\GridFieldOrderableRows;
 
@@ -263,6 +264,30 @@ class EdgeCacheOwnedRelationTest extends EdgeCacheTestCase
         (new EdgeCacheOrderableRowsExtension())->onAfterReorderItems($lister->Pages(), [], []);
 
         $this->assertNotNull($callback);
+        $this->assertPurgedPages([$first, $second]);
+    }
+
+    public function testPagesCopyingThePageArePurgedToo(): void
+    {
+        $page = $this->page();
+        $virtual = VirtualPage::create(['Title' => 'Copy', 'CopyContentFromID' => $page->ID, 'ShowInMenus' => false]);
+        $virtual->write();
+        PurgeQueue::singleton()->reset();
+
+        $page->Targets()->add($this->target());
+
+        $this->assertPurgedPages([$page, $virtual]);
+    }
+
+    public function testAListHandedOutBySingletonPurgesTheOwnersItNames(): void
+    {
+        $first = $this->page();
+        $second = $this->page();
+        $target = $this->target();
+
+        // DataList::relation() builds the list on a record with no ID, for the IDs in the list.
+        OwnedRelationPage::get()->filter('ID', [$first->ID, $second->ID])->relation('Targets')->add($target);
+
         $this->assertPurgedPages([$first, $second]);
     }
 
