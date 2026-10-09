@@ -68,6 +68,10 @@ Cloudflare strips `Cache-Tag` before the response reaches a visitor, so ask the 
 curl -sI --resolve www.example.com:443:ORIGIN_IP https://www.example.com/page | grep -i cache-tag
 ```
 
+## Writes that skip the publish
+
+Pages, elements and opted-in Versioned records purge on a write to the Live stage as well as on a publish, so an edit made through the content API (which writes both stages directly), a script or a queued job does not leave the old HTML at the edge until it expires. A page compares the Live record before and after the write, so a change to its title, URL or position still clears the whole site. A write to the Draft stage purges nothing, and a publish sends the same single request as before. Files are not covered: a file's bytes only change through a publish, which already purges its URL and resized variants.
+
 ## Other records
 
 Records that pages list but that are not pages (testimonials, staff, sponsors) purge when you opt the class in:
@@ -78,7 +82,7 @@ Vendor\Model\Testimonial:
     - Dynamic\EdgeCache\Extension\EdgeCachePurgeable
 ```
 
-Saving or deleting one (publishing, if it is Versioned) purges the pages that listed its class. A record shown on every page, such as footer links, clears the whole site instead:
+Saving or deleting one (publishing, if it is Versioned, or writing it to the Live stage without a publish) purges the pages that listed its class. A record shown on every page, such as footer links, clears the whole site instead:
 
 ```yaml
 Vendor\Model\FooterLink:

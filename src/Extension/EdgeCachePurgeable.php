@@ -22,7 +22,7 @@ use SilverStripe\Versioned\Versioned;
  * By default it clears the pages that listed records of that class (they carry its class tag).
  * `edge_cache_purge: everything` clears the whole site, for a record shown on every page (footer
  * links). A list of class names adds those class tags too. A record that is Versioned purges on
- * publish; one that is not purges on write.
+ * publish, or on a write to the Live stage without a publish; one that is not purges on write.
  *
  * Adding, removing, clearing or reordering the records of a many_many relation it belongs to purges
  * too, from either side of the relation, since those write only a join table and fire no record
@@ -41,7 +41,9 @@ class EdgeCachePurgeable extends Extension
 
     public function onAfterWrite(): void
     {
-        if (!$this->owner->hasExtension(Versioned::class)) {
+        // A versioned record purges when it is published, or when it is written to the Live stage
+        // without a publish (the content API); a Draft write changes nothing the edge serves.
+        if (!$this->owner->hasExtension(Versioned::class) || Versioned::get_stage() === Versioned::LIVE) {
             $this->purge();
         }
     }

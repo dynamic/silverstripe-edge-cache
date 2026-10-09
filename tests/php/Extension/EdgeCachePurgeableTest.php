@@ -93,6 +93,20 @@ class EdgeCachePurgeableTest extends EdgeCacheTestCase
         $this->assertSame(['ec-class-VersionedPurgeableThing'], $pending['tags']);
     }
 
+    public function testAVersionedRecordWrittenToTheLiveStageWithoutAPublishPurges(): void
+    {
+        Versioned::set_stage(Versioned::DRAFT);
+        $thing = VersionedPurgeableThing::create(['Title' => 'Via API']);
+        $thing->writeToStage(Versioned::DRAFT);
+        $this->assertTrue(PurgeQueue::singleton()->isEmpty(), 'the Draft half purges nothing');
+
+        $thing->writeToStage(Versioned::LIVE);
+
+        $pending = PurgeQueue::singleton()->pending();
+        $this->assertFalse($pending['everything']);
+        $this->assertSame(['ec-class-VersionedPurgeableThing'], $pending['tags']);
+    }
+
     public function testCopyingToDraftPurgesNothing(): void
     {
         Versioned::set_stage(Versioned::DRAFT);

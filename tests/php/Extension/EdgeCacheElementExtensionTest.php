@@ -74,6 +74,22 @@ class EdgeCacheElementExtensionTest extends EdgeCacheTestCase
         $this->assertTrue(PurgeQueue::singleton()->isEmpty());
     }
 
+    public function testAWriteToTheLiveStageWithoutAPublishPurgesThePage(): void
+    {
+        [$page, $element] = $this->pageWithElement();
+        $element->publishSingle();
+        PurgeQueue::singleton()->reset();
+
+        $element->Title = 'Written live';
+        $element->writeToStage(Versioned::DRAFT);
+        $this->assertTrue(PurgeQueue::singleton()->isEmpty(), 'the Draft half purges nothing');
+        $element->writeToStage(Versioned::LIVE);
+
+        $pending = PurgeQueue::singleton()->pending();
+        $this->assertFalse($pending['everything']);
+        $this->assertSame(['ec-page-' . $page->ID], $pending['tags']);
+    }
+
     public function testUnpublishingAnElementPurgesItsPage(): void
     {
         [$page, $element] = $this->pageWithElement();
