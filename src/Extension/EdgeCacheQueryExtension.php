@@ -152,7 +152,7 @@ class EdgeCacheQueryExtension extends Extension
                 $elements = $owner->exists() ? [$owner] : $owner::get()->byIDs($ownerIds);
                 foreach ($elements as $element) {
                     // Provided by EdgeCacheElementExtension, checked above.
-                    $element->purgeOwnerPage();
+                    $element->purgeOwnerPage(true);
                 }
             }
 
@@ -160,7 +160,7 @@ class EdgeCacheQueryExtension extends Extension
                 $this->purgePages($changedIds);
             } elseif ($listsElements && $changedIds) {
                 foreach ($listedClass::get()->byIDs($changedIds) as $element) {
-                    $element->purgeOwnerPage(); // @phpstan-ignore method.notFound
+                    $element->purgeOwnerPage(true); // @phpstan-ignore method.notFound
                 }
             }
         };

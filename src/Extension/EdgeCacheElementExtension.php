@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use SilverStripe\CMS\Model\SiteTree;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Core\Extension;
+use SilverStripe\ORM\DataObject;
 use SilverStripe\Versioned\Versioned;
 use Throwable;
 
@@ -78,8 +79,14 @@ class EdgeCacheElementExtension extends Extension
      * Purge every page showing this element: the page it sits on and the pages holding a virtual
      * copy. When that cannot be told, clear the site. Also called when a relation the element
      * lists changes (EdgeCacheQueryExtension), which is live without a publish.
+     *
+     * @param bool $listChange true when called for a change to a list the element holds. An element
+     *                         that is not on a page yet (a template being applied writes the clone
+     *                         and fills its lists before it sets the parent) or sits under a
+     *                         record that is not a page or an element shows on no page, so there is
+     *                         nothing to purge.
      */
-    public function purgeOwnerPage(): void
+    public function purgeOwnerPage(bool $listChange = false): void
     {
         $queue = PurgeQueue::singleton();
 
@@ -95,6 +102,10 @@ class EdgeCacheElementExtension extends Extension
             return;
         }
 
+        if ($listChange && !$virtual && !$this->isShownSomewhere($pages[0])) {
+            return;
+        }
+
         foreach (array_merge($pages, $virtual) as $page) {
             // No page (an orphaned area), or an owner that is not a page (an element inside another
             // element's area): which pages show this element is unknown, so clear the site.
@@ -105,6 +116,20 @@ class EdgeCacheElementExtension extends Extension
             }
             $queue->addTags(EdgeCache::pageTag($page->ID));
         }
+    }
+
+    /**
+     * Whether where an element sits can show it on pages: on a page, or inside another element
+     * (whose pages are unknown, so the caller clears the site). False for no owner at all and for
+     * an owner that is neither, such as a template.
+     */
+    private function isShownSomewhere(mixed $page): bool
+    {
+        if ($page instanceof SiteTree) {
+            return true;
+        }
+
+        return $page instanceof DataObject && $page->hasExtension(self::class);
     }
 
     /**
