@@ -41,6 +41,25 @@ class EdgeCacheElementExtension extends DataExtension
         }
     }
 
+    /**
+     * A write to the Live stage that is not a publish (the content API writes both stages directly)
+     * never reaches the publish hooks. A Draft write purges nothing; a publish queues the same pages
+     * twice, which the queue folds into one request.
+     */
+    public function onAfterWrite(): void
+    {
+        if (Versioned::get_stage() !== Versioned::LIVE) {
+            return;
+        }
+
+        // The Live stage only holds the area once its page is published, and which page shows the
+        // element is the same on either stage, so look it up in Draft.
+        Versioned::withVersionedMode(function () {
+            Versioned::set_stage(Versioned::DRAFT);
+            $this->purgeOwnerPage();
+        });
+    }
+
     public function onAfterUnpublish(): void
     {
         $this->purgeOwnerPage();

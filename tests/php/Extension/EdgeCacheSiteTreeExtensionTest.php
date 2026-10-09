@@ -110,6 +110,51 @@ class EdgeCacheSiteTreeExtensionTest extends EdgeCacheTestCase
         $this->assertTrue(PurgeQueue::singleton()->isEmpty());
     }
 
+    public function testAContentWriteToTheLiveStageWithoutAPublishPurgesThePage(): void
+    {
+        // The content API writes both stages directly.
+        $holder = $this->page('Holder');
+        $page = $this->page('Child', $holder);
+        PurgeQueue::singleton()->reset();
+
+        $page->Content = '<p>written live</p>';
+        $page->writeToStage(Versioned::DRAFT);
+        $this->assertTrue(PurgeQueue::singleton()->isEmpty(), 'the Draft half purges nothing');
+        $page->writeToStage(Versioned::LIVE);
+
+        $pending = PurgeQueue::singleton()->pending();
+        $this->assertFalse($pending['everything']);
+        $this->assertContains('ec-page-' . $page->ID, $pending['tags']);
+        $this->assertContains('ec-page-' . $holder->ID, $pending['tags']);
+    }
+
+    public function testAStructuralWriteToTheLiveStageClearsTheWholeSite(): void
+    {
+        $page = $this->page('Before');
+        PurgeQueue::singleton()->reset();
+
+        $page->Title = 'After';
+        $page->writeToStage(Versioned::LIVE);
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+    }
+
+    public function testACmsPublishStillSendsOnePurge(): void
+    {
+        $holder = $this->page('Holder');
+        $page = $this->page('Child', $holder);
+        $page->Content = '<p>changed</p>';
+        $page->write();
+        PurgeQueue::singleton()->reset();
+        $this->adapter->calls = [];
+
+        $page->publishSingle();
+        PurgeQueue::singleton()->flush();
+
+        $this->assertCount(1, $this->adapter->calls);
+        $this->assertSame('tags', $this->adapter->calls[0][0]);
+    }
+
     public function testSavingSettingsClearsTheWholeSite(): void
     {
         $this->setToggle(true);
