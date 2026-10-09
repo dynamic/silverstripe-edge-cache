@@ -126,16 +126,14 @@ class PurgeQueue
             return true;
         }
 
-        $backlog = PurgeBacklog::singleton()->take();
-        $firstFailed = null;
-        $attempts = 0;
-        if ($backlog !== null) {
-            $firstFailed = $backlog['firstFailed'];
-            $attempts = $backlog['attempts'];
+        // Read, not taken: the backlog stays until the CDN has accepted it, so a request that dies
+        // mid-send does not lose it.
+        $seen = PurgeBacklog::singleton()->peek();
+        if ($seen !== null) {
             $pending = [
-                'everything' => $pending['everything'] || $backlog['everything'],
-                'tags' => array_values(array_unique(array_merge($pending['tags'], $backlog['tags']))),
-                'urls' => array_values(array_unique(array_merge($pending['urls'], $backlog['urls']))),
+                'everything' => $pending['everything'] || $seen['everything'],
+                'tags' => array_values(array_unique(array_merge($pending['tags'], $seen['tags']))),
+                'urls' => array_values(array_unique(array_merge($pending['urls'], $seen['urls']))),
             ];
         }
         if (!$pending['everything'] && !$pending['tags'] && !$pending['urls']) {
@@ -166,11 +164,11 @@ class PurgeQueue
             $context = ['exception' => $e::class . ': ' . $e->getMessage()];
         }
 
+        $kept = PurgeBacklog::singleton()->settle($seen, $lost);
         if (!$lost['everything'] && !$lost['tags'] && !$lost['urls']) {
             return true;
         }
 
-        $kept = PurgeBacklog::singleton()->store($lost, $firstFailed, $attempts + 1);
         $this->logFailure($pending, $context + [
             'retry' => $kept ? 'kept for a retry' : 'not kept: the backlog cache is unavailable',
         ]);

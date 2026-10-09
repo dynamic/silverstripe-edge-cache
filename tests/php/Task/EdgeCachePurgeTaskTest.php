@@ -148,7 +148,7 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
         $this->assertStringContainsString('Purge accepted: waiting from an earlier failure: 1 tag(s), 0 URL(s)', $out);
         $this->assertSame(0, $this->exitCode);
         $this->assertSame([['tags', ['ec-page-1']]], $this->adapter->calls);
-        $this->assertNull(PurgeBacklog::singleton()->summary());
+        $this->assertNull(PurgeBacklog::singleton()->peek());
     }
 
     public function testRetryThatFailsAgainExitsNonZeroAndKeepsTheBacklog(): void
@@ -160,7 +160,7 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
 
         $this->assertStringContainsString('did not accept the purge', $out);
         $this->assertSame(1, $this->exitCode);
-        $this->assertSame(['ec-page-1'], PurgeBacklog::singleton()->summary()['tags']);
+        $this->assertSame(['ec-page-1'], PurgeBacklog::singleton()->peek()['tags']);
     }
 
     public function testAnotherPurgeCarriesTheWaitingOnesToo(): void

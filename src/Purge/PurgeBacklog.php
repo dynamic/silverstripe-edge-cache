@@ -14,10 +14,21 @@ use Throwable;
  * can send it again. Without it a purge lost to a rate limit or an outage leaves the changed pages
  * at the edge until their lifetime ends, with only a log line to say so.
  *
- * Lives in the `EdgeCachePurgeBacklog` cache (the filesystem under the temp folder by default),
- * which a `?flush` does not clear. That folder belongs to the operating-system user, so run the
- * retry as the user that serves the site, or point the cache at a shared `directory` or backend.
- * An entry older than the edge lifetime is dropped: the pages it covers have expired anyway.
+ * Lives in the `EdgeCachePurgeBacklog` cache, a plain filesystem cache under the temp folder (not the
+ * Versioned-aware one, whose keys differ by reading mode, so the CMS, the front end and `sake` would
+ * each see a different backlog). A `?flush` does not clear it. The folder belongs to the operating-system
+ * user, so run the retry as the user that serves the site, or point the cache at a shared `directory`
+ * or backend. Each tag and URL is dropped once it has waited longer than the edge lifetime: the pages
+ * it covered have expired anyway.
+ *
+ * @phpstan-type Stored array{
+ *     everything: int|null, tags: array<string, int>, urls: array<string, int>,
+ *     firstFailed: int, lastFailed: int, attempts: int, version: string
+ * }
+ * @phpstan-type Waiting array{
+ *     everything: bool, tags: string[], urls: string[],
+ *     firstFailed: int, lastFailed: int, attempts: int, version: string
+ * }
  */
 class PurgeBacklog
 {
@@ -35,64 +46,84 @@ class PurgeBacklog
     private static $max_tags = 200;
 
     /**
-     * Add what failed to what is already waiting.
+     * What is waiting, or null when nothing is. `version` changes on every write, so a sender can tell
+     * whether the backlog moved while it was sending.
      *
-     * @param array{everything: bool, tags: string[], urls: string[]} $lost
-     * @param int|null $firstFailed when the oldest of these purges first failed (a retry passes it back)
-     * @param int $attempts how many times these purges have been sent and failed
-     * @return bool false when the backlog could not be written, so the purge is only in the log
+     * @return Waiting|null
      */
-    public function store(array $lost, ?int $firstFailed = null, int $attempts = 1): bool
+    public function peek(): ?array
+    {
+        $waiting = $this->read();
+        if ($waiting === null) {
+            return null;
+        }
+
+        return [
+            'everything' => $waiting['everything'] !== null,
+            'tags' => array_keys($waiting['tags']),
+            'urls' => array_keys($waiting['urls']),
+            'firstFailed' => $waiting['firstFailed'],
+            'lastFailed' => $waiting['lastFailed'],
+            'attempts' => $waiting['attempts'],
+            'version' => $waiting['version'],
+        ];
+    }
+
+    /**
+     * Record the outcome of a send that started from `$seen` (what peek() returned, or null): `$lost`
+     * is what the CDN refused. Empty means everything went through, so the entry is removed, unless
+     * another request stored something in the meantime, which stays. Items that failed keep the time
+     * they first failed.
+     *
+     * @param array{everything: bool, tags: string[], urls: string[], version?: string, attempts?: int}|null $seen
+     * @param array{everything: bool, tags: string[], urls: string[]} $lost
+     * @return bool false when the backlog could not be written, so a failed purge is only in the log
+     */
+    public function settle(?array $seen, array $lost): bool
     {
         try {
-            $now = time();
-            $waiting = $this->read()
-                ?? ['everything' => false, 'tags' => [], 'urls' => [], 'firstFailed' => $now, 'attempts' => 0];
+            return $this->locked(function () use ($seen, $lost): bool {
+                $current = $this->read();
+                $unchanged = ($seen === null && $current === null)
+                    || ($seen !== null && $current !== null && ($seen['version'] ?? null) === $current['version']);
 
-            $everything = $waiting['everything'] || $lost['everything'];
-            $tags = array_values(array_unique(array_merge($waiting['tags'], $lost['tags'])));
-            if (count($tags) > (int) static::config()->get('max_tags')) {
-                $everything = true;
-            }
+                if (!$lost['everything'] && !$lost['tags'] && !$lost['urls']) {
+                    if ($unchanged && $current !== null) {
+                        $this->cache()->delete(self::KEY);
+                    }
 
-            return $this->cache()->set(self::KEY, [
-                'everything' => $everything,
-                // Purging everything covers every tag.
-                'tags' => $everything ? [] : $tags,
-                'urls' => array_values(array_unique(array_merge($waiting['urls'], $lost['urls']))),
-                'firstFailed' => min($waiting['firstFailed'], $firstFailed ?? $now),
-                'lastFailed' => $now,
-                'attempts' => max($waiting['attempts'], $attempts),
-            ]);
+                    return true;
+                }
+
+                // Items keep the time they first failed. A backlog that moved while sending keeps what the
+                // other request stored; otherwise only what failed again stays.
+                $now = time();
+                $base = $unchanged || $current === null ? $this->blank() : $current;
+                foreach ($lost['tags'] as $tag) {
+                    $base['tags'][$tag] ??= $current['tags'][$tag] ?? $now;
+                }
+                foreach ($lost['urls'] as $url) {
+                    $base['urls'][$url] ??= $current['urls'][$url] ?? $now;
+                }
+                if ($lost['everything']) {
+                    $base['everything'] ??= $current['everything'] ?? $now;
+                }
+                if ($base['everything'] !== null || count($base['tags']) > (int) static::config()->get('max_tags')) {
+                    // Purging everything covers every tag.
+                    $base['everything'] ??= $now;
+                    $base['tags'] = [];
+                }
+
+                $base['firstFailed'] = $current['firstFailed'] ?? $now;
+                $base['lastFailed'] = $now;
+                $base['attempts'] = max($base['attempts'], (int) ($seen['attempts'] ?? 0) + 1);
+                $base['version'] = uniqid('', true);
+
+                return $this->cache()->set(self::KEY, $base);
+            });
         } catch (Throwable) {
             return false;
         }
-    }
-
-    /**
-     * The waiting purges, emptying the backlog. Null when there are none or they are older than the
-     * edge lifetime.
-     *
-     * @return array{everything: bool, tags: string[], urls: string[], firstFailed: int, lastFailed: int, attempts: int}|null
-     */
-    public function take(): ?array
-    {
-        $waiting = $this->read();
-        if ($waiting !== null) {
-            $this->clear();
-        }
-
-        return $waiting;
-    }
-
-    /**
-     * The waiting purges without emptying the backlog, for the status task.
-     *
-     * @return array{everything: bool, tags: string[], urls: string[], firstFailed: int, lastFailed: int, attempts: int}|null
-     */
-    public function summary(): ?array
-    {
-        return $this->read();
     }
 
     public function clear(): void
@@ -105,31 +136,74 @@ class PurgeBacklog
     }
 
     /**
-     * @return array{everything: bool, tags: string[], urls: string[], firstFailed: int, lastFailed: int, attempts: int}|null
+     * @return Stored
+     */
+    private function blank(): array
+    {
+        $now = time();
+
+        return [
+            'everything' => null,
+            'tags' => [],
+            'urls' => [],
+            'firstFailed' => $now,
+            'lastFailed' => $now,
+            'attempts' => 0,
+            'version' => '',
+        ];
+    }
+
+    /**
+     * What is stored, without the tags and URLs that have waited longer than the edge lifetime.
+     *
+     * @return Stored|null
      */
     private function read(): ?array
     {
         try {
-            $waiting = $this->cache()->get(self::KEY);
+            $stored = $this->cache()->get(self::KEY);
         } catch (Throwable) {
             return null;
         }
-
-        if (!is_array($waiting) || !isset($waiting['firstFailed'])) {
-            return null;
-        }
-        // The pages a purge this old covered have expired from the edge by now.
-        if (time() - (int) $waiting['firstFailed'] > (int) EdgeCache::config()->get('edge_ttl')) {
+        if (!is_array($stored) || !isset($stored['firstFailed'])) {
             return null;
         }
 
-        return $waiting + [
-            'everything' => false,
-            'tags' => [],
-            'urls' => [],
-            'lastFailed' => (int) $waiting['firstFailed'],
-            'attempts' => 1,
-        ];
+        $oldest = time() - (int) EdgeCache::config()->get('edge_ttl');
+        $waiting = $stored + $this->blank();
+        $waiting['tags'] = array_filter((array) $waiting['tags'], fn ($since) => $since >= $oldest);
+        $waiting['urls'] = array_filter((array) $waiting['urls'], fn ($since) => $since >= $oldest);
+        if ($waiting['everything'] !== null && $waiting['everything'] < $oldest) {
+            $waiting['everything'] = null;
+        }
+
+        return $waiting['everything'] === null && !$waiting['tags'] && !$waiting['urls'] ? null : $waiting;
+    }
+
+    /**
+     * Runs the callback holding a lock on a file next to the cache, so two requests that fail at the
+     * same moment do not overwrite each other's entry. Without a lock file it runs unlocked.
+     *
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
+    private function locked(callable $callback): mixed
+    {
+        $handle = defined('TEMP_PATH') ? @fopen(TEMP_PATH . '/edge-cache-purge-backlog.lock', 'c') : false;
+        if ($handle && !flock($handle, LOCK_EX)) {
+            fclose($handle);
+            $handle = false;
+        }
+
+        try {
+            return $callback();
+        } finally {
+            if ($handle) {
+                flock($handle, LOCK_UN);
+                fclose($handle);
+            }
+        }
     }
 
     private function cache(): CacheInterface

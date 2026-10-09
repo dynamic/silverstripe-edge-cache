@@ -73,7 +73,7 @@ class EdgeCacheStatusTask extends BuildTask
 
     private function backlogState(): string
     {
-        $waiting = PurgeBacklog::singleton()->summary();
+        $waiting = PurgeBacklog::singleton()->peek();
         if (!$waiting) {
             return 'none waiting';
         }

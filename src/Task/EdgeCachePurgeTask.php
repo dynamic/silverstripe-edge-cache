@@ -82,7 +82,7 @@ class EdgeCachePurgeTask extends BuildTask
             );
         }
 
-        $waiting = PurgeBacklog::singleton()->summary();
+        $waiting = PurgeBacklog::singleton()->peek();
         if ($retry && !$what && !$waiting) {
             $this->out($output, 'No failed purges are waiting.');
 
