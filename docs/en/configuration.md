@@ -88,6 +88,27 @@ Run `verify=1` before ticking the Settings box and after changing credentials. T
 
 A purge that the CDN refuses never breaks a publish, so an editor sees "Published" either way. The failure is written to the error log at `error` level with what was not purged, so the log must go somewhere (`SS_ERROR_LOG`, or a logger handler of your own). A purge run from the task (`edge-cache-purge`) exits 1 and prints the failure.
 
+### Failed purges are kept and retried
+
+What the CDN refuses (a rate limit, an outage, a wrong token) is kept, and the next purge sends it again together with its own, so one publish after the CDN recovers also clears what the earlier one missed. `edge-cache-status` shows what is waiting (`WAITING: 3 tag(s), 0 URL(s); first failed 4 min ago, 2 attempt(s)`). To clear it without waiting for a publish, run from cron, as the user that serves the site:
+
+```
+*/5 * * * * cd /var/www/site && vendor/bin/sake dev/tasks/edge-cache-purge retry=1
+```
+
+`retry=1` prints "No failed purges are waiting" and exits 0 when there is nothing to send, and exits 1 while the CDN still refuses. A purge that fails more than `PurgeBacklog.max_tags` (200) tags becomes one purge of everything, and everything waiting replaces any tags. A tag or URL that has waited longer than `edge_ttl` is dropped, since the pages it covered have expired from the edge by then; each one is timed from when it first failed.
+
+The backlog is the `EdgeCachePurgeBacklog` cache, a plain filesystem cache (a Symfony `FilesystemAdapter`, not the default factory) under the temp folder (`TEMP_PATH`) that a `?flush` does not clear and that is the same whatever Versioned reading mode a request runs in (CMS, front end, `sake`). It stays in place while a purge is being sent and is removed only once the CDN has accepted it; a lock file next to it keeps two failing requests from overwriting each other. That folder belongs to the operating-system user, so a cron job running as another user does not see what the web server stored. Run it as the web user, or give the cache a shared `directory` (or a Redis or Memcached factory) in your own config:
+
+```yaml
+SilverStripe\Core\Injector\Injector:
+  Dynamic\EdgeCache\BacklogPool:
+    constructor:
+      directory: /var/www/shared/edge-cache-backlog
+```
+
+A failure is logged once per attempt with the message in `Dynamic\EdgeCache\Purge\PurgeQueue::FAILURE_MESSAGE` (match on "Edge cache purge did not complete" to alert), and its context says whether the purge was `kept for a retry`.
+
 ## After a deploy
 
 Publishing purges what editors changed. A deploy that changes templates, the theme or anything else that alters the HTML of pages nobody edited does not, so cached pages keep the old markup until `edge_ttl` ends. Add this to the deploy steps:

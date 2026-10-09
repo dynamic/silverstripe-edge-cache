@@ -2,6 +2,8 @@
 
 namespace Dynamic\EdgeCache\Tests\Task;
 
+use Dynamic\EdgeCache\Purge\PurgeBacklog;
+use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use Dynamic\EdgeCache\Tests\Fixtures\TestablePurgeTask;
 use SilverStripe\Control\HTTPRequest;
@@ -111,5 +113,53 @@ class EdgeCachePurgeTaskTest extends EdgeCacheTestCase
 
         $this->assertSame(1, $this->task->exitCode);
         $this->assertSame([], $this->adapter->calls);
+    }
+
+    public function testRetryWithNothingWaitingSaysSoAndSucceeds(): void
+    {
+        $out = $this->runTask(['retry' => '1']);
+
+        $this->assertStringContainsString('No failed purges are waiting', $out);
+        $this->assertNull($this->task->exitCode);
+        $this->assertSame([], $this->adapter->calls);
+    }
+
+    public function testRetrySendsTheFailedPurgesAndEmptiesTheBacklog(): void
+    {
+        $this->adapter->returnFalse = true;
+        PurgeQueue::singleton()->addTags('ec-page-1')->flush();
+        $this->adapter->returnFalse = false;
+        $this->adapter->calls = [];
+
+        $out = $this->runTask(['retry' => '1']);
+
+        $this->assertStringContainsString('Purge accepted: waiting from an earlier failure: 1 tag(s), 0 URL(s)', $out);
+        $this->assertNull($this->task->exitCode);
+        $this->assertSame([['tags', ['ec-page-1']]], $this->adapter->calls);
+        $this->assertNull(PurgeBacklog::singleton()->peek());
+    }
+
+    public function testRetryThatFailsAgainExitsNonZeroAndKeepsTheBacklog(): void
+    {
+        $this->adapter->returnFalse = true;
+        PurgeQueue::singleton()->addTags('ec-page-1')->flush();
+
+        $this->runTask(['retry' => '1']);
+
+        $this->assertStringContainsString('did not accept the purge', $this->task->stderr);
+        $this->assertSame(1, $this->task->exitCode);
+        $this->assertSame(['ec-page-1'], PurgeBacklog::singleton()->peek()['tags']);
+    }
+
+    public function testAnotherPurgeCarriesTheWaitingOnesToo(): void
+    {
+        $this->adapter->returnFalse = true;
+        PurgeQueue::singleton()->addTags('ec-page-1')->flush();
+        $this->adapter->returnFalse = false;
+        $this->adapter->calls = [];
+
+        $this->runTask(['tag' => 'ec-page-2']);
+
+        $this->assertSame([['tags', ['ec-page-2', 'ec-page-1']]], $this->adapter->calls);
     }
 }

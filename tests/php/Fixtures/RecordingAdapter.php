@@ -21,6 +21,20 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
     public bool $returnFalse = false;
 
     /**
+     * Purge kinds ('tags', 'urls', 'everything') the CDN refuses while accepting the rest.
+     *
+     * @var string[]
+     */
+    public array $refuses = [];
+
+    /**
+     * Called as each purge is sent, to see what the module has stored at that moment.
+     *
+     * @var callable|null
+     */
+    public $whileSending = null;
+
+    /**
      * @var string[]|null
      */
     public ?array $allowedVary = null;
@@ -80,7 +94,10 @@ class RecordingAdapter implements EdgeCacheAdapter, TestOnly
             throw new \RuntimeException('CDN down');
         }
         $this->calls[] = [$what, $items];
+        if ($this->whileSending) {
+            ($this->whileSending)($what, $items);
+        }
 
-        return !$this->returnFalse;
+        return !$this->returnFalse && !in_array($what, $this->refuses, true);
     }
 }

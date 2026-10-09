@@ -3,6 +3,7 @@
 namespace Dynamic\EdgeCache\Task;
 
 use Dynamic\EdgeCache\EdgeCache;
+use Dynamic\EdgeCache\Purge\PurgeBacklog;
 use SilverStripe\Core\Environment;
 use SilverStripe\Dev\BuildTask;
 use SilverStripe\SiteConfig\SiteConfig;
@@ -37,6 +38,7 @@ class EdgeCacheStatusTask extends BuildTask
             'Adapter:          ' . $adapter::class,
             'Credentials set:  ' . ($adapter->isConfigured() ? 'yes' : 'NO: pages are not edge-cached and nothing is purged'),
             'Settings switch:  ' . $this->switchState(),
+            'Failed purges:    ' . $this->backlogState(),
         ];
 
         $failed = false;
@@ -52,6 +54,25 @@ class EdgeCacheStatusTask extends BuildTask
         if ($failed) {
             $this->fail('The CDN credentials did not verify.');
         }
+    }
+
+    private function backlogState(): string
+    {
+        $waiting = PurgeBacklog::singleton()->peek();
+        if (!$waiting) {
+            return 'none waiting';
+        }
+
+        $what = $waiting['everything']
+            ? 'everything'
+            : count($waiting['tags']) . ' tag(s), ' . count($waiting['urls']) . ' URL(s)';
+
+        return sprintf(
+            'WAITING: %s; first failed %d min ago, %d attempt(s). Send with: sake dev/tasks/edge-cache-purge retry=1',
+            $what,
+            (int) round((time() - $waiting['firstFailed']) / 60),
+            $waiting['attempts']
+        );
     }
 
     private function switchState(): string

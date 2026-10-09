@@ -3,6 +3,7 @@
 namespace Dynamic\EdgeCache\Task;
 
 use Dynamic\EdgeCache\EdgeCache;
+use Dynamic\EdgeCache\Purge\PurgeBacklog;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use SilverStripe\Dev\BuildTask;
 
@@ -12,10 +13,16 @@ use SilverStripe\Dev\BuildTask;
  *   everything=1        purge every cached page of the site
  *   tag=ec-page-12,...  purge by cache tag
  *   purge_url=https://... purge one or more absolute URLs (comma separated)
+ *   retry=1             send the purges the CDN refused earlier (see edge-cache-status)
  *
  * Only runs in the environments the module is enabled for. Exits 1 when the CDN did not accept the
  * purge, so a deploy script can tell. Run `everything=1` after a deploy that changes templates, the
  * theme or anything else that changes the HTML of pages nobody edited.
+ *
+ * A purge the CDN refuses is kept, and every send (this task included) tries what is waiting again.
+ * Run `retry=1` from cron to drain it between publishes, as the user that serves the site:
+ *
+ *     *\/5 * * * * cd /var/www/site && vendor/bin/sake dev/tasks/edge-cache-purge retry=1
  */
 class EdgeCachePurgeTask extends BuildTask
 {
@@ -25,7 +32,7 @@ class EdgeCachePurgeTask extends BuildTask
 
     protected $title = 'Purge the CDN edge cache';
 
-    protected $description = 'Purges cached pages at the CDN: everything=1, tag=a,b or purge_url=https://...';
+    protected $description = 'Purges cached pages at the CDN: everything=1, tag=a,b, purge_url=https://... or retry=1';
 
     public function run($request)
     {
@@ -51,16 +58,29 @@ class EdgeCachePurgeTask extends BuildTask
             $what[] = 'urls ' . implode(', ', $urls);
         }
 
-        if (!$what) {
+        $retry = (bool) $request->getVar('retry');
+        if (!$what && !$retry) {
             // A script that meant to purge something must not read this as success. Under sake `url=`
             // never arrives (sake overwrites it with the task's path), so the old form lands here.
-            $this->fail('Nothing to purge. Pass everything=1, tag=a,b or purge_url=https://... (under sake, '
+            $this->fail('Nothing to purge. Pass everything=1, tag=a,b, purge_url=https://... or retry=1 (under sake, '
                 . 'url= is replaced by the task path: use purge_url=).');
 
             return;
         }
 
-        if (!$queue->flush()) {
+        $waiting = PurgeBacklog::singleton()->peek();
+        if ($retry && !$what && !$waiting) {
+            $this->out('No failed purges are waiting.');
+
+            return;
+        }
+        if ($waiting) {
+            $what[] = 'waiting from an earlier failure: ' . ($waiting['everything']
+                ? 'everything'
+                : count($waiting['tags']) . ' tag(s), ' . count($waiting['urls']) . ' URL(s)');
+        }
+
+        if (!$queue->retry()) {
             $this->fail('The CDN did not accept the purge: ' . implode('; ', $what) . '. Run edge-cache-status verify=1 '
                 . 'to check the credentials; the error log has the detail.');
 
