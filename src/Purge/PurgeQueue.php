@@ -21,6 +21,12 @@ class PurgeQueue
     use Injectable;
 
     /**
+     * Logged at error level when the CDN does not accept a purge. Match on this to alert.
+     */
+    public const FAILURE_MESSAGE = 'Edge cache purge did not complete; changed pages stay cached until the retry succeeds '
+        . 'or the edge lifetime ends. Retry with: sake dev/tasks/edge-cache-purge retry=1';
+
+    /**
      * @var array<string, true>
      */
     private array $tags = [];
@@ -83,9 +89,10 @@ class PurgeQueue
     }
 
     /**
-     * Send what is queued to the adapter and empty the queue. Safe to call more than once.
-     * Purge everything wins over tags; URLs are always sent. Does nothing outside the enabled
-     * environments.
+     * Send what is queued, and anything an earlier purge left waiting in the backlog, to the adapter
+     * and empty the queue. Safe to call more than once. Purge everything wins over tags; URLs are
+     * always sent. Does nothing outside the enabled environments. What the CDN refuses goes back
+     * into the backlog for the next flush or `edge-cache-purge retry=1`.
      *
      * @return bool false when the CDN did not accept the purge (logged with what was lost); true when
      *              it did, or when there was nothing to send
@@ -96,6 +103,21 @@ class PurgeQueue
             return true;
         }
 
+        return $this->send();
+    }
+
+    /**
+     * Send only what an earlier purge left waiting in the backlog (and anything queued now).
+     *
+     * @return bool false when the CDN did not accept it, true when it did or nothing was waiting
+     */
+    public function retry(): bool
+    {
+        return $this->send();
+    }
+
+    private function send(): bool
+    {
         $pending = $this->pending();
         $this->reset();
 
@@ -104,38 +126,61 @@ class PurgeQueue
             return true;
         }
 
-        $failed = [];
+        // Read, not taken: the backlog stays until the CDN has accepted it, so a request that dies
+        // mid-send does not lose it.
+        $seen = PurgeBacklog::singleton()->peek();
+        if ($seen !== null) {
+            $pending = [
+                'everything' => $pending['everything'] || $seen['everything'],
+                'tags' => array_values(array_unique(array_merge($pending['tags'], $seen['tags']))),
+                'urls' => array_values(array_unique(array_merge($pending['urls'], $seen['urls']))),
+            ];
+        }
+        if (!$pending['everything'] && !$pending['tags'] && !$pending['urls']) {
+            return true;
+        }
+
+        $lost = ['everything' => false, 'tags' => [], 'urls' => []];
+        $context = [];
         try {
             $adapter = $edge->adapter();
             // Purging everything covers every tag; URLs still go out, since a file or a response this
             // module never tagged does not carry the site tag.
             if ($pending['everything']) {
                 if (!$adapter->purgeEverything()) {
-                    $failed[] = 'everything';
+                    $lost['everything'] = true;
+                    $context['failed'][] = 'everything';
                 }
             } elseif ($pending['tags'] && !$adapter->purgeTags($pending['tags'])) {
-                $failed[] = 'tags';
+                $lost['tags'] = $pending['tags'];
+                $context['failed'][] = 'tags';
             }
             if ($pending['urls'] && !$adapter->purgeUrls($pending['urls'])) {
-                $failed[] = 'urls';
+                $lost['urls'] = $pending['urls'];
+                $context['failed'][] = 'urls';
             }
         } catch (Throwable $e) {
-            // A failed purge must never break a publish.
-            $this->logFailure($pending, ['exception' => $e::class . ': ' . $e->getMessage()]);
-
-            return false;
+            $lost = $pending;
+            $context = ['exception' => $e::class . ': ' . $e->getMessage()];
         }
 
-        if ($failed) {
-            $this->logFailure($pending, ['failed' => $failed]);
+        $kept = PurgeBacklog::singleton()->settle($seen, $lost);
+        if (!$lost['everything'] && !$lost['tags'] && !$lost['urls']) {
+            return true;
         }
 
-        return !$failed;
+        $this->logFailure($pending, $context + [
+            'retry' => $kept ? 'kept for a retry' : 'not kept: the backlog cache is unavailable',
+        ]);
+
+        return false;
     }
 
     /**
-     * The purge did not reach the CDN, so pages that changed stay cached until their edge lifetime
-     * ends. Record what was lost so it can be purged by hand (edge-cache-purge).
+     * The purge did not reach the CDN, so pages that changed stay cached until a retry succeeds or
+     * their edge lifetime ends. Record what was lost.
+     *
+     * The message is stable, so a log alert can match it.
      *
      * @param array{everything: bool, tags: string[], urls: string[]} $pending
      * @param array<string, mixed> $context
@@ -144,8 +189,7 @@ class PurgeQueue
     {
         try {
             Injector::inst()->get(LoggerInterface::class)->error(
-                'Edge cache purge did not complete; changed pages stay cached until the edge lifetime ends. '
-                . 'Purge by hand with: sake dev/tasks/edge-cache-purge',
+                self::FAILURE_MESSAGE,
                 $context + [
                     'everything' => $pending['everything'],
                     'tags' => array_slice($pending['tags'], 0, 30),
