@@ -19,3 +19,12 @@ SilverStripe\Core\Injector\Injector:
     constructor:
       namespace: 'EdgeCache'
       defaultLifetime: 3600
+
+  # Purges the CDN refused, kept for a retry (see Purge\PurgeBacklog). No in-memory layer, so a retry
+  # in another process reads what a web request stored. Entries expire in code, not here.
+  Psr\SimpleCache\CacheInterface.EdgeCachePurgeBacklog:
+    factory: SilverStripe\Core\Cache\CacheFactory
+    constructor:
+      namespace: 'EdgeCachePurgeBacklog'
+      defaultLifetime: 0
+      useInMemoryCache: false
