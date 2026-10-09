@@ -49,9 +49,12 @@ class EdgeCacheSiteTreeExtension extends Extension
     private static $structural_fields = ['Title', 'MenuTitle', 'URLSegment', 'ShowInMenus', 'Sort', 'ParentID'];
 
     /**
-     * The Live record as it was before the write in progress to the Live stage.
+     * The Live record as it was before each write in progress to the Live stage, by page ID. One
+     * extension instance serves every page, and a write can start another page's write.
+     *
+     * @var array<int, DataObject|null>
      */
-    private ?DataObject $liveBeforeWrite = null;
+    private array $liveBeforeWrite = [];
 
     /**
      * Called by Hierarchy when `$Children` or `$AllChildren` is read, with this page as the owner.
@@ -102,10 +105,10 @@ class EdgeCacheSiteTreeExtension extends Extension
      */
     public function onBeforeWrite(): void
     {
-        $this->liveBeforeWrite = null;
         $owner = $this->owner;
         if (Versioned::get_stage() === Versioned::LIVE && $owner->isInDB()) {
-            $this->liveBeforeWrite = Versioned::get_by_stage($owner->baseClass(), Versioned::LIVE)->byID($owner->ID);
+            $this->liveBeforeWrite[$owner->ID] = Versioned::get_by_stage($owner->baseClass(), Versioned::LIVE)
+                ->byID($owner->ID);
         }
     }
 
@@ -121,8 +124,8 @@ class EdgeCacheSiteTreeExtension extends Extension
             return;
         }
 
-        $before = $this->liveBeforeWrite;
-        $this->liveBeforeWrite = null;
+        $before = $this->liveBeforeWrite[$this->owner->ID] ?? null;
+        unset($this->liveBeforeWrite[$this->owner->ID]);
         $this->purgeRecord($before);
     }
 
