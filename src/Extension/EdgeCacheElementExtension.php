@@ -74,7 +74,12 @@ class EdgeCacheElementExtension extends DataExtension
         return $tags;
     }
 
-    protected function purgeOwnerPage(): void
+    /**
+     * Purge every page showing this element: the page it sits on and the pages holding a virtual
+     * copy. When that cannot be told, clear the site. Also called when a relation the element
+     * lists changes (EdgeCacheQueryExtension), which is live without a publish.
+     */
+    public function purgeOwnerPage(): void
     {
         $queue = PurgeQueue::singleton();
 
