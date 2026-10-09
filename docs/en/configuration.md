@@ -112,14 +112,13 @@ What the CDN refuses (a rate limit, an outage, a wrong token) is kept, and the n
 
 `--retry` prints "No failed purges are waiting" and exits 0 when there is nothing to send, and exits 1 while the CDN still refuses. A purge that fails more than `PurgeBacklog.max_tags` (200) tags becomes one purge of everything, and everything waiting replaces any tags. A tag or URL that has waited longer than `edge_ttl` is dropped, since the pages it covered have expired from the edge by then; each one is timed from when it first failed.
 
-The backlog is the `EdgeCachePurgeBacklog` cache, a plain filesystem cache under the temp folder (`TEMP_PATH`) that a `?flush` does not clear and that is the same whatever Versioned reading mode a request runs in (CMS, front end, `sake`). It stays in place while a purge is being sent and is removed only once the CDN has accepted it; a lock file next to it keeps two failing requests from overwriting each other. That folder belongs to the operating-system user, so a cron job running as another user does not see what the web server stored. Run it as the web user, or give the cache a shared `directory` (or a Redis or Memcached factory) in your own config:
+The backlog is the `EdgeCachePurgeBacklog` cache, a plain filesystem cache (a Symfony `FilesystemAdapter`, not the default factory) under the temp folder (`TEMP_PATH`) that a `?flush` does not clear and that is the same whatever Versioned reading mode a request runs in (CMS, front end, `sake`). It stays in place while a purge is being sent and is removed only once the CDN has accepted it; a lock file next to it keeps two failing requests from overwriting each other. That folder belongs to the operating-system user, so a cron job running as another user does not see what the web server stored. Run it as the web user, or give the cache a shared `directory` (or a Redis or Memcached factory) in your own config:
 
 ```yaml
 SilverStripe\Core\Injector\Injector:
-  Dynamic\EdgeCache\BacklogCacheFactory:
+  Dynamic\EdgeCache\BacklogPool:
     constructor:
-      args:
-        directory: /var/www/shared/edge-cache-backlog
+      directory: /var/www/shared/edge-cache-backlog
 ```
 
 A failure is logged once per attempt with the message in `Dynamic\EdgeCache\Purge\PurgeQueue::FAILURE_MESSAGE` (match on "Edge cache purge did not complete" to alert), and its context says whether the purge was `kept for a retry`.

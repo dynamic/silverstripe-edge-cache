@@ -20,19 +20,17 @@ SilverStripe\Core\Injector\Injector:
       namespace: 'EdgeCache'
       defaultLifetime: 3600
 
-  # Purges the CDN refused, kept for a retry (see Purge\PurgeBacklog). A plain filesystem cache: the
-  # default factory is wrapped by Versioned, which keys every entry by reading mode, and the CMS, the
-  # front end and sake would each see a different backlog. No in-memory layer, so another process reads
-  # what a web request stored. Items expire in code, not here.
-  Dynamic\EdgeCache\BacklogCacheFactory:
-    class: SilverStripe\Core\Cache\DefaultCacheFactory
-    constructor:
-      args:
-        directory: '`TEMP_PATH`'
-      logger: '%$Psr\Log\LoggerInterface'
-  Psr\SimpleCache\CacheInterface.EdgeCachePurgeBacklog:
-    factory: Dynamic\EdgeCache\BacklogCacheFactory
+  # Purges the CDN refused, kept for a retry (see Purge\PurgeBacklog). A plain filesystem pool, not the
+  # default cache factory: Versioned wraps that one and keys every entry by reading mode (the CMS, the
+  # front end and sake would each see a different backlog), and it may store entries as PHP files read
+  # through opcache, which the CLI and FPM do not share. No expiry here; items expire in code.
+  Dynamic\EdgeCache\BacklogPool:
+    class: Symfony\Component\Cache\Adapter\FilesystemAdapter
     constructor:
       namespace: 'EdgeCachePurgeBacklog'
       defaultLifetime: 0
-      useInMemoryCache: false
+      directory: '`TEMP_PATH`'
+  Psr\SimpleCache\CacheInterface.EdgeCachePurgeBacklog:
+    class: Symfony\Component\Cache\Psr16Cache
+    constructor:
+      pool: '%$Dynamic\EdgeCache\BacklogPool'
