@@ -7,6 +7,8 @@ use Dynamic\EdgeCache\Extension\EdgeCacheOrderableRowsExtension;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use Dynamic\EdgeCache\Tests\Fixtures\JoinTarget;
+use Dynamic\EdgeCache\Tests\Fixtures\ElementWithVirtuals;
+use Dynamic\EdgeCache\Tests\Fixtures\ListedElementWithVirtuals;
 use Dynamic\EdgeCache\Tests\Fixtures\ListsPagesAndElements;
 use Dynamic\EdgeCache\Tests\Fixtures\OwnedElementJoin;
 use Dynamic\EdgeCache\Tests\Fixtures\OwnedRelationElement;
@@ -32,6 +34,7 @@ class EdgeCacheOwnedRelationTest extends EdgeCacheTestCase
         OwnedRelationPage::class,
         OwnedRelationElement::class,
         OwnedRelationElementUnderOwner::class,
+        ListedElementWithVirtuals::class,
         OwnedElementJoin::class,
         ListsPagesAndElements::class,
     ];
@@ -194,6 +197,24 @@ class EdgeCacheOwnedRelationTest extends EdgeCacheTestCase
         $orphan->Targets()->add($this->target());
 
         $this->assertTrue(PurgeQueue::singleton()->isEmpty());
+    }
+
+    public function testAPagelessElementWithVirtualCopiesStillClearsTheSiteWhenItsListChanges(): void
+    {
+        // Virtual copies show the element on pages that may not be found, so the early return for
+        // an element that shows nowhere does not apply.
+        $element = ListedElementWithVirtuals::create(['Title' => 'Block']);
+        $element->write();
+        ElementWithVirtuals::$virtualPages = [null];
+        PurgeQueue::singleton()->reset();
+
+        try {
+            $element->Targets()->add($this->target());
+        } finally {
+            ElementWithVirtuals::$virtualPages = [];
+        }
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
     }
 
     public function testAnElementUnderANonPageOwnerPurgesNothingWhenItsListChanges(): void
