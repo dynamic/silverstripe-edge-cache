@@ -41,7 +41,9 @@ class EdgeCachePurgeable extends Extension
 
     public function onAfterWrite(): void
     {
-        if (!$this->owner->hasExtension(Versioned::class)) {
+        // A versioned record purges when it is published, or when it is written to the Live stage
+        // without a publish (the content API); a Draft write changes nothing the edge serves.
+        if (!$this->owner->hasExtension(Versioned::class) || Versioned::get_stage() === Versioned::LIVE) {
             $this->purge();
         }
     }

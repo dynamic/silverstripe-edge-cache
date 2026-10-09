@@ -49,6 +49,11 @@ class EdgeCacheSiteTreeExtension extends Extension
     private static $structural_fields = ['Title', 'MenuTitle', 'URLSegment', 'ShowInMenus', 'Sort', 'ParentID'];
 
     /**
+     * The Live record as it was before the write in progress to the Live stage.
+     */
+    private ?DataObject $liveBeforeWrite = null;
+
+    /**
      * Called by Hierarchy when `$Children` or `$AllChildren` is read, with this page as the owner.
      * Only records while a front-end page is being rendered (EdgeCache::isCollecting()).
      *
@@ -89,6 +94,36 @@ class EdgeCacheSiteTreeExtension extends Extension
         $owner = $this->owner;
         $live = Versioned::get_by_stage($owner->baseClass(), Versioned::LIVE)->byID($owner->ID);
         $this->purgeRecord($live, false, $owner->getAtVersion($fromStage));
+    }
+
+    /**
+     * Remember the Live record before a write to the Live stage, so `onAfterWrite()` can tell a
+     * structural change from a content one.
+     */
+    public function onBeforeWrite(): void
+    {
+        $this->liveBeforeWrite = null;
+        $owner = $this->owner;
+        if (Versioned::get_stage() === Versioned::LIVE && $owner->isInDB()) {
+            $this->liveBeforeWrite = Versioned::get_by_stage($owner->baseClass(), Versioned::LIVE)->byID($owner->ID);
+        }
+    }
+
+    /**
+     * A write to the Live stage that is not a publish (the content API writes both stages directly;
+     * so can a script or a queued job) never reaches the publish hooks, and the edge would keep the
+     * old page until it expires. A publish also writes Live, so it passes here too: it queues the
+     * same tags a second time, which the queue folds into one request. A Draft write purges nothing.
+     */
+    public function onAfterWrite(): void
+    {
+        if (Versioned::get_stage() !== Versioned::LIVE) {
+            return;
+        }
+
+        $before = $this->liveBeforeWrite;
+        $this->liveBeforeWrite = null;
+        $this->purgeRecord($before);
     }
 
     public function onAfterUnpublish(): void
