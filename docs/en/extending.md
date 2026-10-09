@@ -56,6 +56,10 @@ Cloudflare strips `Cache-Tag` before the response reaches a visitor, so ask the 
 curl -sI --resolve www.example.com:443:ORIGIN_IP https://www.example.com/page | grep -i cache-tag
 ```
 
+## Writes that skip the publish
+
+Pages, elements and opted-in Versioned records purge on a write to the Live stage as well as on a publish, so an edit made through the content API (which writes both stages directly), a script or a queued job does not leave the old HTML at the edge until it expires. A page compares the Live record before and after the write, so a change to its title, URL or position still clears the whole site. A write to the Draft stage purges nothing, and a publish sends the same single request as before. Files are not covered: a file's bytes only change through a publish, which already purges its URL and resized variants.
+
 ## Other records
 
 Records that pages list but that are not pages (testimonials, staff, sponsors) purge when you opt the class in:
@@ -66,7 +70,7 @@ Vendor\Model\Testimonial:
     - Dynamic\EdgeCache\Extension\EdgeCachePurgeable
 ```
 
-Saving or deleting one (publishing, if it is Versioned) purges the pages that listed its class. A record shown on every page, such as footer links, clears the whole site instead:
+Saving or deleting one (publishing, if it is Versioned, or writing it to the Live stage without a publish) purges the pages that listed its class. A record shown on every page, such as footer links, clears the whole site instead:
 
 ```yaml
 Vendor\Model\FooterLink:
@@ -88,9 +92,9 @@ App\Model\FooterLinkGroup:
 
 Lists held by Settings (`SiteConfig`), such as utility or footer links, need no declaration: adding, removing or reordering their members clears the whole site, as saving Settings does, whichever side of the relation is edited.
 
-A page or an element needs no declaration either. A `many_many` list is not versioned, so a change to a page's or an element's list (a page's slides, an FAQ element's questions, a testimonials element's categories) is live as soon as it is saved, with nothing to publish. Adding, removing, clearing or reordering its members purges the page, or for an element the page it sits on (and the pages holding a virtual copy, or the whole site when the page cannot be found), whether the members are plain records or `many_many` through. From the other end, a record that lists pages or elements purges those pages when its list changes. Core's link and file tracking lists, which Silverstripe rewrites on every save of a record with links or images in its content, are skipped; `ignored_join_tables` on `EdgeCacheQueryExtension` names them. A virtual page copying a page is purged with it.
+A page or an element needs no declaration either. A `many_many` list is not versioned, so a change to a page's or an element's list (a page's slides, an FAQ element's questions, a testimonials element's categories) is live as soon as it is saved, with nothing to publish. Adding, removing, clearing or reordering its members purges the page, or for an element the page it sits on (and the pages holding a virtual copy), whether the members are plain records or `many_many` through. An element that is not on a page, or sits under a template or another record that is not a page, purges nothing: it shows on no page, and applying a template writes the clone and fills its lists before the clone has a page. An element inside another element clears the whole site, since the pages showing the outer element are unknown. From the other end, a record that lists pages or elements purges those pages when its list changes. Core's link and file tracking lists, which Silverstripe rewrites on every save of a record with links or images in its content, are skipped; `ignored_join_tables` on `EdgeCacheQueryExtension` names them. A virtual page copying a page is purged with it.
 
-Saving a record in a `GridField` detail form adds it to the list again, which core reports as an add, so saving a listed record purges the owning page even when its membership did not change (the whole site when the owning element's page cannot be found).
+Saving a record in a `GridField` detail form adds it to the list again, which core reports as an add, so saving a listed record purges the owning page even when its membership did not change (the whole site when the owning element sits inside another element).
 
 It works from either side of the relation: ticking groups on a link purges for the group class when the group class opted in, whether or not the link class did. From the side that did not declare the relation, only the class as declared on the relation is purged, so a subclass tag of it is not.
 

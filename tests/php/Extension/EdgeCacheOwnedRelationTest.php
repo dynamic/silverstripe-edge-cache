@@ -7,9 +7,12 @@ use Dynamic\EdgeCache\Extension\EdgeCacheOrderableRowsExtension;
 use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use Dynamic\EdgeCache\Tests\Fixtures\JoinTarget;
+use Dynamic\EdgeCache\Tests\Fixtures\ElementWithVirtuals;
+use Dynamic\EdgeCache\Tests\Fixtures\ListedElementWithVirtuals;
 use Dynamic\EdgeCache\Tests\Fixtures\ListsPagesAndElements;
 use Dynamic\EdgeCache\Tests\Fixtures\OwnedElementJoin;
 use Dynamic\EdgeCache\Tests\Fixtures\OwnedRelationElement;
+use Dynamic\EdgeCache\Tests\Fixtures\OwnedRelationElementUnderOwner;
 use Dynamic\EdgeCache\Tests\Fixtures\OwnedRelationPage;
 use Dynamic\EdgeCache\Tests\Fixtures\PlainJoinOwner;
 use Page;
@@ -30,6 +33,8 @@ class EdgeCacheOwnedRelationTest extends EdgeCacheTestCase
         PlainJoinOwner::class,
         OwnedRelationPage::class,
         OwnedRelationElement::class,
+        OwnedRelationElementUnderOwner::class,
+        ListedElementWithVirtuals::class,
         OwnedElementJoin::class,
         ListsPagesAndElements::class,
     ];
@@ -182,13 +187,65 @@ class EdgeCacheOwnedRelationTest extends EdgeCacheTestCase
         $this->assertPurgedPages([$page]);
     }
 
-    public function testAnElementWithNoPageClearsTheSiteWhenItsListChanges(): void
+    public function testAnElementWithNoPagePurgesNothingWhenItsListChanges(): void
     {
+        // Applying a template writes the clone and fills its lists before it sets the parent.
         $orphan = OwnedRelationElement::create(['Title' => 'Orphan']);
         $orphan->write();
         PurgeQueue::singleton()->reset();
 
         $orphan->Targets()->add($this->target());
+
+        $this->assertTrue(PurgeQueue::singleton()->isEmpty());
+    }
+
+    public function testAPagelessElementWithVirtualCopiesStillClearsTheSiteWhenItsListChanges(): void
+    {
+        // Virtual copies show the element on pages that may not be found, so the early return for
+        // an element that shows nowhere does not apply.
+        $element = ListedElementWithVirtuals::create(['Title' => 'Block']);
+        $element->write();
+        ElementWithVirtuals::$virtualPages = [null];
+        PurgeQueue::singleton()->reset();
+
+        try {
+            $element->Targets()->add($this->target());
+        } finally {
+            ElementWithVirtuals::$virtualPages = [];
+        }
+
+        $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
+    }
+
+    public function testAnElementUnderANonPageOwnerPurgesNothingWhenItsListChanges(): void
+    {
+        OwnedRelationElementUnderOwner::$owner = JoinTarget::create(['Title' => 'Template']);
+        $element = OwnedRelationElementUnderOwner::create(['Title' => 'Block']);
+        $element->write();
+        PurgeQueue::singleton()->reset();
+
+        try {
+            $element->Targets()->add($this->target());
+        } finally {
+            OwnedRelationElementUnderOwner::$owner = null;
+        }
+
+        $this->assertTrue(PurgeQueue::singleton()->isEmpty());
+    }
+
+    public function testAnElementInsideAnotherElementClearsTheSiteWhenItsListChanges(): void
+    {
+        // The pages showing the outer element are unknown.
+        OwnedRelationElementUnderOwner::$owner = OwnedRelationElement::create(['Title' => 'Group']);
+        $element = OwnedRelationElementUnderOwner::create(['Title' => 'Block']);
+        $element->write();
+        PurgeQueue::singleton()->reset();
+
+        try {
+            $element->Targets()->add($this->target());
+        } finally {
+            OwnedRelationElementUnderOwner::$owner = null;
+        }
 
         $this->assertTrue(PurgeQueue::singleton()->pending()['everything']);
     }

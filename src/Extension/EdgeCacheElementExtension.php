@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use SilverStripe\CMS\Model\SiteTree;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\ORM\DataExtension;
+use SilverStripe\ORM\DataObject;
 use SilverStripe\Versioned\Versioned;
 use Throwable;
 
@@ -38,6 +39,25 @@ class EdgeCacheElementExtension extends DataExtension
         if ($toStage === Versioned::LIVE) {
             $this->purgeOwnerPage();
         }
+    }
+
+    /**
+     * A write to the Live stage that is not a publish (the content API writes both stages directly)
+     * never reaches the publish hooks. A Draft write purges nothing; a publish queues the same pages
+     * twice, which the queue folds into one request.
+     */
+    public function onAfterWrite(): void
+    {
+        if (Versioned::get_stage() !== Versioned::LIVE) {
+            return;
+        }
+
+        // The Live stage only holds the area once its page is published, and which page shows the
+        // element is the same on either stage, so look it up in Draft.
+        Versioned::withVersionedMode(function () {
+            Versioned::set_stage(Versioned::DRAFT);
+            $this->purgeOwnerPage();
+        });
     }
 
     public function onAfterUnpublish(): void
@@ -78,8 +98,14 @@ class EdgeCacheElementExtension extends DataExtension
      * Purge every page showing this element: the page it sits on and the pages holding a virtual
      * copy. When that cannot be told, clear the site. Also called when a relation the element
      * lists changes (EdgeCacheQueryExtension), which is live without a publish.
+     *
+     * @param bool $listChange true when called for a change to a list the element holds. An element
+     *                         that is not on a page yet (a template being applied writes the clone
+     *                         and fills its lists before it sets the parent) or sits under a
+     *                         record that is not a page or an element shows on no page, so there is
+     *                         nothing to purge.
      */
-    public function purgeOwnerPage(): void
+    public function purgeOwnerPage(bool $listChange = false): void
     {
         $queue = PurgeQueue::singleton();
 
@@ -95,6 +121,10 @@ class EdgeCacheElementExtension extends DataExtension
             return;
         }
 
+        if ($listChange && !$virtual && !$this->isShownSomewhere($pages[0])) {
+            return;
+        }
+
         foreach (array_merge($pages, $virtual) as $page) {
             // No page (an orphaned area), or an owner that is not a page (an element inside another
             // element's area): which pages show this element is unknown, so clear the site.
@@ -105,6 +135,20 @@ class EdgeCacheElementExtension extends DataExtension
             }
             $queue->addTags(EdgeCache::pageTag($page->ID));
         }
+    }
+
+    /**
+     * Whether where an element sits can show it on pages: on a page, or inside another element
+     * (whose pages are unknown, so the caller clears the site). False for no owner at all and for
+     * an owner that is neither, such as a template.
+     */
+    private function isShownSomewhere(mixed $page): bool
+    {
+        if ($page instanceof SiteTree) {
+            return true;
+        }
+
+        return $page instanceof DataObject && $page->hasExtension(self::class);
     }
 
     /**
