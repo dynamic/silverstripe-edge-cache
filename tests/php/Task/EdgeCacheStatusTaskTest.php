@@ -2,6 +2,7 @@
 
 namespace Dynamic\EdgeCache\Tests\Task;
 
+use Dynamic\EdgeCache\Purge\PurgeQueue;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
 use Dynamic\EdgeCache\Task\EdgeCacheStatusTask;
 use Dynamic\EdgeCache\Tests\Fixtures\RunsTasks;
@@ -24,6 +25,7 @@ class EdgeCacheStatusTaskTest extends EdgeCacheTestCase
         $this->assertStringContainsString('Credentials set:  yes', $out);
         $this->assertStringContainsString('Settings switch:  ticked', $out);
         $this->assertStringContainsString('Verify:           not run', $out);
+        $this->assertStringContainsString('Failed purges:    none waiting', $out);
         $this->assertSame([], $this->adapter->calls);
         $this->assertSame(0, $this->exitCode);
     }
@@ -66,5 +68,18 @@ class EdgeCacheStatusTaskTest extends EdgeCacheTestCase
     public function testItIsRegisteredUnderTheNameTheDocsUse(): void
     {
         $this->assertSame('tasks:edge-cache-status', EdgeCacheStatusTask::getName());
+    }
+
+    public function testItReportsPurgesTheCdnRefused(): void
+    {
+        $this->adapter->returnFalse = true;
+        PurgeQueue::singleton()->addTags(['ec-page-1', 'ec-page-2'])->addUrls('https://example.com/a.pdf')->flush();
+
+        $out = $this->runTask();
+
+        $this->assertStringContainsString('WAITING: 2 tag(s), 1 URL(s)', $out);
+        $this->assertStringContainsString('1 attempt(s)', $out);
+        $this->assertStringContainsString('sake tasks:edge-cache-purge --retry', $out);
+        $this->assertSame(0, $this->exitCode);
     }
 }
