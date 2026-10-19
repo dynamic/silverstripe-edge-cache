@@ -12,6 +12,7 @@ use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Control\Middleware\ChangeDetectionMiddleware;
 use SilverStripe\Control\Middleware\HTTPCacheControlMiddleware;
 use SilverStripe\Control\Session;
+use SilverStripe\Security\Security;
 use SilverStripe\Versioned\Versioned;
 
 /**
@@ -30,6 +31,8 @@ class EdgeCacheMiddlewareConditionalTest extends EdgeCacheTestCase
         HTTPCacheControlMiddleware::reset();
         HTTPCacheControlMiddleware::config()->set('defaultState', HTTPCacheControlMiddleware::STATE_ENABLED);
         HTTPCacheControlMiddleware::config()->set('defaultForcingLevel', 0);
+        // The test case runs as the default admin; a page served from the edge is anonymous.
+        Security::setCurrentUser(null);
     }
 
     public function testTheAnswerToARevalidationIsStampedLikeThePage(): void

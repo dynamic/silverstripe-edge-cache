@@ -9,9 +9,11 @@ use SilverStripe\Dev\TestOnly;
 /**
  * A page controller that renders a fixed body instead of the install's theme.
  *
- * A theme can put a form on every page (the startup theme's layout renders `$Form`), and a form's
- * CSRF token is written to the session, which makes core answer `private`. A test of the response
- * headers wants the page as the module sees it, with nothing the theme adds.
+ * What a theme adds to a page is not what a test of the response headers is about, and some of it
+ * writes to the session: the CMS navigator a theme shows a logged-in editor builds its logout link
+ * with a CSRF token (`Security::logout_url()`), and core answers a request whose session holds
+ * anything with `private`. The test logs out as well, so the page is rendered as the anonymous
+ * visitor the edge serves; this controller keeps the body the same whatever the theme would add.
  */
 class BarePageController extends PageController implements TestOnly
 {
