@@ -21,8 +21,9 @@ use Throwable;
  * Runs outside `HTTPCacheControlMiddleware`, so it reads the final state: a session turns the page
  * private, a form with a CSRF token turns it `no-store`, an error or redirect turns it `no-store`.
  * Edge headers go out only when the controller marked the page cacheable, the result is still
- * `public`, nothing in the response (a cookie, a non-200 status, a non-GET method) says otherwise,
- * and the page carries no more tags than `max_tags` allows. In every other case any edge header
+ * `public`, nothing in the response (a cookie, a status other than 200 or the 304 that answers the
+ * edge's revalidation, a non-GET method) says otherwise, and the page carries no more tags than
+ * `max_tags` allows. In every other case any edge header
  * already on the response is removed, and a page the controller made public is made private, so a
  * public header never leaves without edge handling behind it.
  *
@@ -84,13 +85,25 @@ class EdgeCacheMiddleware implements HTTPMiddleware
 
     /**
      * Everything that decides whether this response may go to the edge except the tag count.
+     *
+     * A 304 counts as the 200 it stands in for. The edge revalidates a stale page with a
+     * conditional request, and core answers with the page's headers and no body, after the page
+     * rendered and collected its tags (ChangeDetectionMiddleware sets the status outside
+     * HTTPCacheControlMiddleware, so the `Cache-Control` written for the 200 is kept even though
+     * core counts 304 among its redirect codes). HTTP has a cache update its stored copy's headers
+     * from the 304 (RFC 7234, section 4.3.4), so the 304 carries what this render would carry as
+     * a 200: the edge lifetime, and the tags this render collected. Downgraded to `private`, it
+     * would make every later hit of the cached page private.
      */
     protected function isEligible(EdgeCache $edge, HTTPRequest $request, HTTPResponse $response): bool
     {
         if (!$edge->isMarkedCacheable() || !$edge->isEnabled()) {
             return false;
         }
-        if (!in_array($request->httpMethod(), ['GET', 'HEAD'], true) || $response->getStatusCode() !== 200) {
+        if (!in_array($request->httpMethod(), ['GET', 'HEAD'], true)) {
+            return false;
+        }
+        if (!in_array($response->getStatusCode(), [200, 304], true)) {
             return false;
         }
         if ($edge->isExcludedPath($request->getURL())) {
