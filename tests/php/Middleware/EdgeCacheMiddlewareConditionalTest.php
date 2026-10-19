@@ -5,8 +5,8 @@ namespace Dynamic\EdgeCache\Tests\Middleware;
 use Dynamic\EdgeCache\EdgeCache;
 use Dynamic\EdgeCache\Middleware\EdgeCacheMiddleware;
 use Dynamic\EdgeCache\Tests\EdgeCacheTestCase;
+use Dynamic\EdgeCache\Tests\Fixtures\BarePageController;
 use Page;
-use PageController;
 use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Control\Middleware\ChangeDetectionMiddleware;
@@ -86,7 +86,8 @@ class EdgeCacheMiddlewareConditionalTest extends EdgeCacheTestCase
 
     /**
      * One request through the real stack in its real order: the module outermost, then
-     * ChangeDetectionMiddleware, then HTTPCacheControlMiddleware, then the page's controller.
+     * ChangeDetectionMiddleware, then HTTPCacheControlMiddleware, then the page's controller. The
+     * controller renders a fixed body rather than the install's theme (BarePageController).
      *
      * @param array<string, string> $headers
      */
@@ -104,7 +105,7 @@ class EdgeCacheMiddlewareConditionalTest extends EdgeCacheTestCase
             $request->addHeader($name, $value);
         }
 
-        $controller = fn (HTTPRequest $request) => PageController::create($page)->handleRequest($request);
+        $controller = fn (HTTPRequest $request) => BarePageController::create($page)->handleRequest($request);
         $cacheControl = fn (HTTPRequest $request) => HTTPCacheControlMiddleware::singleton()->process($request, $controller);
         $changeDetection = fn (HTTPRequest $request) => (new ChangeDetectionMiddleware())->process($request, $cacheControl);
 
