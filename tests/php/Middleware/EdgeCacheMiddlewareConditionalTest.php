@@ -36,7 +36,43 @@ class EdgeCacheMiddlewareConditionalTest extends EdgeCacheTestCase
     {
         $page = $this->publishedPage();
 
-        $first = $this->request($page);
+        $session = new Session([]);
+        $first = $this->request($page, [], $session);
+        // DIAG (temporary): explain a private 200 on CI.
+        $control = HTTPCacheControlMiddleware::singleton();
+        $internal = (fn () => ['state' => $this->state, 'forcingLevel' => $this->forcingLevel, 'directives' => $this->stateDirectives])->call($control);
+        $edge = EdgeCache::singleton();
+        fwrite(STDERR, "\nDIAG " . json_encode([
+            'status' => $first->getStatusCode(),
+            'cache-control' => $first->getHeader('Cache-Control'),
+            'edge-cache-control' => $first->getHeader('Edge-Cache-Control'),
+            'cache-tag' => $first->getHeader('Cache-Tag'),
+            'vary' => $first->getHeader('Vary'),
+            'set-cookie-header' => $first->getHeader('Set-Cookie'),
+            'headers_list' => headers_list(),
+            'session' => $session->getAll(),
+            'session_started' => $session->isStarted(),
+            'markedCacheable' => $edge->isMarkedCacheable(),
+            'enabled' => $edge->isEnabled(),
+            'envEnabled' => $edge->isEnvironmentEnabled(),
+            'tags' => $edge->getTags(),
+            'stage' => Versioned::get_stage(),
+            'env' => \SilverStripe\Core\Environment::getEnv('SS_ENVIRONMENT_TYPE'),
+            'isDev' => \SilverStripe\Control\Director::isDev(),
+            'control' => $internal,
+            'defaultState' => HTTPCacheControlMiddleware::config()->get('defaultState'),
+            'defaultForcingLevel' => HTTPCacheControlMiddleware::config()->get('defaultForcingLevel'),
+            'pageController' => get_parent_class(PageController::class),
+            'adapter' => get_class($edge->adapter()),
+            'allowedVary' => $edge->adapter()->allowedVary(),
+            'siteconfig' => \SilverStripe\SiteConfig\SiteConfig::current_site_config()->EdgeCacheEnabled,
+            'pageId' => $page->ID,
+            'published' => $page->isPublished(),
+            'canView' => $page->canView(),
+            'currentUser' => \SilverStripe\Security\Security::getCurrentUser()?->ID,
+            'body_len' => strlen((string) $first->getBody()),
+            'body_head' => substr((string) $first->getBody(), 0, 300),
+        ], JSON_UNESCAPED_SLASHES) . "\n");
         $this->assertSame(200, $first->getStatusCode());
         $this->assertSame('public, must-revalidate, max-age=60', $first->getHeader('Cache-Control'));
         $this->assertSame('max-age=21600', $first->getHeader('Edge-Cache-Control'));
