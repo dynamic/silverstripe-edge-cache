@@ -21,10 +21,11 @@ class EdgeCacheMiddlewareTest extends EdgeCacheTestCase
         int $status = 200,
         string $method = 'GET',
         string $url = 'about',
-        array $headers = []
+        array $headers = [],
+        string $body = 'body'
     ): HTTPResponse {
         $request = new HTTPRequest($method, $url);
-        $response = new HTTPResponse('body', $status);
+        $response = new HTTPResponse($body, $status);
         $response->addHeader('Cache-Control', $cacheControl);
         foreach ($headers as $name => $value) {
             $response->addHeader($name, $value);
@@ -102,6 +103,51 @@ class EdgeCacheMiddlewareTest extends EdgeCacheTestCase
         foreach ([301, 302, 404, 500] as $status) {
             $this->assertNull($this->respond(status: $status)->getHeader('Edge-Cache-Control'), (string) $status);
         }
+    }
+
+    /**
+     * The edge revalidates a stale page with a conditional request, and core answers 304 with the
+     * page's headers and no body. A cache refreshes its stored copy's headers from the 304, so it
+     * must carry the same edge headers as the page; otherwise the downgrade's `private` sticks to
+     * the cached page for every later hit.
+     */
+    public function testANotModifiedAnswerToTheEdgesRevalidationIsStampedLikeThePage(): void
+    {
+        $response = $this->respond(status: 304, body: '', headers: ['ETag' => '"abc"']);
+
+        $this->assertSame('max-age=21600', $response->getHeader('Edge-Cache-Control'));
+        $this->assertSame('ec-site,ec-page-7,ec-class-AboutPage', $response->getHeader('Cache-Tag'));
+        $this->assertSame('public, max-age=60, must-revalidate', $response->getHeader('Cache-Control'));
+        $this->assertSame('"abc"', $response->getHeader('ETag'));
+    }
+
+    public function testANotModifiedAnswerForAPageNotMarkedCacheableIsNotStamped(): void
+    {
+        $response = $this->respond(cacheable: false, status: 304, body: '');
+
+        $this->assertNull($response->getHeader('Edge-Cache-Control'));
+        $this->assertNull($response->getHeader('Cache-Tag'));
+    }
+
+    /**
+     * A session makes core's page private rather than no-store, so its 304 reaches the middleware
+     * too: it stays bare, and its header is left as it is.
+     */
+    public function testANotModifiedAnswerMadePrivateByASessionIsNotStamped(): void
+    {
+        $response = $this->respond('private, must-revalidate', status: 304, body: '');
+
+        $this->assertNull($response->getHeader('Edge-Cache-Control'));
+        $this->assertNull($response->getHeader('Cache-Tag'));
+        $this->assertSame('private, must-revalidate', $response->getHeader('Cache-Control'));
+    }
+
+    public function testANotModifiedAnswerWithACookieIsNotStamped(): void
+    {
+        $response = $this->respond(status: 304, body: '', headers: ['Set-Cookie' => 'PHPSESSID=abc; path=/']);
+
+        $this->assertNull($response->getHeader('Edge-Cache-Control'));
+        $this->assertSame('private, must-revalidate', $response->getHeader('Cache-Control'));
     }
 
     public function testOnlyGetAndHead(): void

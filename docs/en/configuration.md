@@ -29,7 +29,7 @@ All of these must hold:
 4. The request reads the Live stage (not `?stage=Stage` or CMS preview).
 5. The page is a front-end page (`ContentController`) and not an Ajax request.
 6. Silverstripe leaves the page `public`. A request with a session becomes `private`; a page with a CSRF form becomes `no-store`; errors and redirects become `no-store`.
-7. The response is a 200 to a GET or HEAD request and sets no cookie.
+7. The response is a 200 to a GET or HEAD request and sets no cookie. The 304 that answers the edge's conditional request for a stale page counts as that page's 200: it carries the headers that render would carry as a 200, lifetime and tags included, which HTTP has the cache adopt for its stored copy (RFC 7234, section 4.3.4).
 8. The page carries no more than `max_tags` tags.
 
 A page the controller made public that fails 7 or 8 is changed to `private, must-revalidate`, so a public header never leaves without edge handling behind it.
